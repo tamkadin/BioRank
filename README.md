@@ -59,7 +59,7 @@ pip install -r requirements.txt
 ## 📂 Project Structure
 ```
 BioRank/
-├── pagerank_gui.py                 # GUI Launcher  
+├── main.py                 # GUI Launcher  
 ├── improved_pagerank/             # Core PageRank algorithms  
 ├── data_preprocessing/            # Data processing scripts  
 ├── output/                        # Generated outputs  
@@ -70,7 +70,7 @@ BioRank/
 ## 🖱 How to Launch GUI
 To start the GUI, run the following command in your terminal:
 ```
-python pagerank_gui.py
+python main.py
 ```
 ## ⚙️ Data Preprocessing Functions
 ### 1. 🧱 Build Ontology Graph
