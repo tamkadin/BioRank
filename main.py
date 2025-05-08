@@ -75,10 +75,9 @@ class PageRankGUI:
                 "secondary_seed_file_path": entries["deg"].get(),
                 "map__gene__ontologies_file_path": entries["anno"].get(),
                 "disease_ontology_file_path": entries["disease_onto"].get(),
-                "matrix_aggregation_policy": "convex_combination" if enhanced else "equal_weight",
-                "personalization_vector_creation_policies": ["topological", "biological"] if enhanced else ["topological"],
-                "personalization_vector_aggregation_policy": "Sum" if enhanced else "Mean",
-                "restart_prob": 0.9,
+                "matrix_aggregation_policy": "convex_combination",
+                "personalization_vector_creation_policies": ["topological", "biological"],
+                "personalization_vector_aggregation_policy": "Sum",
                 "alpha": 0.5,
                 "beta": 0.5,
                 "network_weight_flag": True
@@ -86,6 +85,7 @@ class PageRankGUI:
             os.makedirs("output", exist_ok=True)
             output_path = "output/LATEST_RESULT.csv"
             args["output_file_path"] = output_path
+            args["enhanced"] = enhanced
             try:
                 ImprovedPageRankCancerGeneRanking(**args)
                 messagebox.showinfo("Done", f"✅ {title} completed.")
