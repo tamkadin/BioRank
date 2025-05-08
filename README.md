@@ -23,10 +23,12 @@ This project, **BioRank**, was developed based on and extends the methods propos
 The original source code is available at:  
 🔗 [https://github.com/LeoM93/BiologicalRandomWalks](https://github.com/LeoM93/BiologicalRandomWalks)
 
-**BioRank** enhances and expands their framework by providing:  
-- A graphical user interface (GUI) for easier use by biomedical researchers  
-- Full support for preprocessing steps such as ontology enrichment and co-expression analysis  
-- Additional visualization, automation, and output export functions  
+**BioRank** enhances and expands their framework by providing:
+
+- An intuitive graphical user interface (GUI) that enables biomedical researchers to run analyses without coding
+- Integration of both the original and enhanced **PageRank algorithms** for gene prioritization
+- Evaluation and validation of prioritized genes against curated cancer knowledgebases such as **OncoKB**
+- Exportable outputs and automated workflows for reproducibility and downstream analysis
 
 If you use **BioRank** or its underlying methods in your work, please cite both the original publication and this project.
 
