@@ -18,7 +18,7 @@ This project, **BioRank**, was developed based on and extends the methods propos
 > M. Gentili, L. Martini, M. Sponziello, and L. Becchetti,  
 > *"Biological Random Walks: Multi-Omics Integration for Disease Gene Prioritization"*,  
 > *Bioinformatics*, vol. 38, no. 17, pp. 4145–4152, 2022.  
-> [https://doi.org/10.1093/bioinformatics/btac425](https://doi.org/10.1093/bioinformatics/btac425)
+> [https://doi.org/10.1093/bioinformatics/btac446](https://doi.org/10.1093/bioinformatics/btac446)
 
 The original source code is available at:  
 🔗 [https://github.com/LeoM93/BiologicalRandomWalks](https://github.com/LeoM93/BiologicalRandomWalks)
