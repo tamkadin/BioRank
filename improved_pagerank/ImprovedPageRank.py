@@ -1,19 +1,12 @@
 from improved_pagerank.loader.loader import Loader
-
-
 from improved_pagerank.graph_weight_computation.PPI_graph_weight_computation import ComputePPIGraphWeight
-
 from improved_pagerank.matrix_creation.convex_combination_aggregation_matrix_creation import ConvexCombinationMatrixAggregationCreation
-
 from improved_pagerank.personalization_vector_creation.default_personalization_vector_creation import DefaultPersonalizationVectorCreation
 from improved_pagerank.personalization_vector_creation.biological_personalization_vector_creation import BiologicalPersonalizationVectorCreation
 from improved_pagerank.personalization_vector_creation.topological_personalization_vector_creation import TopologicalPersonalizationVectorCreation
-
-
 from improved_pagerank.personalization_vector_aggregation.p_v_aggregation import PersonalizationVectorAggregation
-
 from improved_pagerank.core.page_rank_core import PageRankCore
-
+from improved_pagerank.core.page_rank_ori import PageRankOri
 import time
 import csv
 
@@ -29,31 +22,30 @@ class ImprovedPageRankCancerGeneRanking():
         matrix_aggregation_policy = "convex_combination",
         personalization_vector_creation_policies = ["biological","topological"],
         personalization_vector_aggregation_policy = "Sum",
-        restart_prob = 0.75,
         alpha = 0.5,
         beta = 0.5,
         network_weight_flag = True,
         output_file_path = None,
+        enhanced = True,
         ):
 
         t0 = time.perf_counter()
         start_time = time.perf_counter()
         self.alpha = alpha
         self.beta = beta
-
+        self.enhanced = enhanced
+        
         print("Loading Networks....")
         self.file_loader_step = Loader(ppi_file_path,
             co_expression_file_path,
             seed_file_path,
             secondary_seed_file_path = secondary_seed_file_path,
-
             disease_ontology_file_path = disease_ontology_file_path,
             map_gene_ontologies_file_path = map__gene__ontologies_file_path)
         
         PPI, CO_expression, seed_set, secondary_seed_set, map__gene__ontologies, disease_ontology = self.file_loader_step.run()
         print("Loading Time:", time.perf_counter() - t0)
         print()
-
 
         if network_weight_flag:
             t0 = time.perf_counter()
@@ -109,7 +101,10 @@ class ImprovedPageRankCancerGeneRanking():
 
         print("Exectuting Pagerank....")
 
-        core = PageRankCore(p_0,G)		
+        if self.enhanced:
+            core = PageRankCore(p_0, G)
+        else:
+            core = PageRankOri(G)	
 
         self.ranked_list = core.run()
         print("Time for Exectuting Page_rank", time.perf_counter() - t0)
