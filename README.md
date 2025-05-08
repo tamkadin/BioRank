@@ -11,6 +11,25 @@
 🏛️ Project: BioRank, 2025
 ---
 
+## 📚 Citation
+
+This project, **BioRank**, was developed based on and extends the methods proposed in the following publication:
+
+> M. Gentili, L. Martini, M. Sponziello, and L. Becchetti,  
+> *"Biological Random Walks: Multi-Omics Integration for Disease Gene Prioritization"*,  
+> *Bioinformatics*, vol. 38, no. 17, pp. 4145–4152, 2022.  
+> [https://doi.org/10.1093/bioinformatics/btac425](https://doi.org/10.1093/bioinformatics/btac425)
+
+The original source code is available at:  
+🔗 [https://github.com/LeoM93/BiologicalRandomWalks](https://github.com/LeoM93/BiologicalRandomWalks)
+
+**BioRank** enhances and expands their framework by providing:  
+- A graphical user interface (GUI) for easier use by biomedical researchers  
+- Full support for preprocessing steps such as ontology enrichment and co-expression analysis  
+- Additional visualization, automation, and output export functions  
+
+If you use **BioRank** or its underlying methods in your work, please cite both the original publication and this project.
+
 ## 📘 Introduction
 
 Recent studies have shown that PageRank-based approaches can help identify disease-related genes from biological networks. However, traditional methods mainly rely on network topology and overlook vital biological factors such as gene expression, functional annotations, and similarity between gene pairs. In this study, we propose an Enhanced PageRank algorithm that integrates multi-omics data—including PPI networks, co-expression, gene ontology (GO, KEGG, Reactome), and differentially expressed genes—into a unified framework. By modifying the personalization vector and applying weighted diffusion, our method improves the ability to prioritize cancer-related genes more accurately than classical PageRank and other network propagation approaches.
