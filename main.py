@@ -2,6 +2,7 @@ import tkinter as tk
 from tkinter import filedialog, messagebox
 import os
 import time
+import sys
 import shutil
 import pandas as pd
 from improved_pagerank.ImprovedPageRank import ImprovedPageRankCancerGeneRanking
@@ -14,7 +15,11 @@ class PageRankGUI:
     def __init__(self, root):
         self.root = root
         self.root.title("Cancer Gene Prioritization Tool")
-        self.root.iconbitmap("icon.ico")
+        if hasattr(sys, '_MEIPASS'):
+            icon_path = os.path.join(sys._MEIPASS, "icon.ico")
+        else:
+            icon_path = os.path.abspath("icon.ico")
+        self.root.iconbitmap(default=icon_path)
         self.root.geometry("1000x400")
         self.root.configure(bg="white")
 
