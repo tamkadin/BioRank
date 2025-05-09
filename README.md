@@ -77,6 +77,7 @@ Install required dependencies:
 ```
 pip install -r requirements.txt
 ```
+The dataset can be downloaded from [here](https://drive.google.com/drive/folders/1vDQ26QL_uSOz9uE4S-L3Au3tmK1XqkcI?usp=drive_link).
 ## 📂 Project Structure
 ```
 BioRank/
