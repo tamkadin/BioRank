@@ -40,17 +40,17 @@ class PageRankGUI:
         return tk.Button(parent, text=text, bg="#0078D7", fg="white", font=("Segoe UI", 10, "bold"), command=command, relief="flat", padx=10, pady=5)
 
     def init_run_buttons(self):
-        tk.Label(self.left_frame, text="Choose a PageRank version:", font=("Arial", 12, "bold")).pack(pady=10)
-        self.styled_button(self.left_frame, "▶ Run Original PageRank", self.open_original_pagerank_window).pack(pady=10)
-        self.styled_button(self.left_frame, "▶ Run Enhanced PageRank", self.open_enhanced_pagerank_window).pack(pady=10)
+        tk.Label(self.left_frame, text="Choose a Algorithm:", font=("Arial", 12, "bold")).pack(pady=10)
+        self.styled_button(self.left_frame, "▶ PageRank (Original PageRank)", self.open_original_pagerank_window).pack(pady=10)
+        self.styled_button(self.left_frame, "▶ BioRank (Enhanced PageRank)", self.open_enhanced_pagerank_window).pack(pady=10)
 
     def open_original_pagerank_window(self):
-        self.create_pagerank_input_window("Original PageRank", enhanced=False)
+        self.create_pagerank_input_window("PageRank (Original PageRank)", algorithm="ori")
 
     def open_enhanced_pagerank_window(self):
-        self.create_pagerank_input_window("Enhanced PageRank", enhanced=True)
+        self.create_pagerank_input_window("BioRank (Enhanced PageRank)", algorithm="biorank")
 
-    def create_pagerank_input_window(self, title, enhanced):
+    def create_pagerank_input_window(self, title, algorithm):
         window = tk.Toplevel(self.root)
         window.title(title)
         window.geometry("700x400")
@@ -90,7 +90,7 @@ class PageRankGUI:
             os.makedirs("output", exist_ok=True)
             output_path = "output/LATEST_RESULT.csv"
             args["output_file_path"] = output_path
-            args["enhanced"] = enhanced
+            args["algorithm"] = algorithm
             try:
                 ImprovedPageRankCancerGeneRanking(**args)
                 messagebox.showinfo("Done", f"✅ {title} completed.")
