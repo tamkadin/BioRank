@@ -7,6 +7,7 @@ from improved_pagerank.personalization_vector_creation.topological_personalizati
 from improved_pagerank.personalization_vector_aggregation.p_v_aggregation import PersonalizationVectorAggregation
 from improved_pagerank.core.page_rank_core import PageRankCore
 from improved_pagerank.core.page_rank_ori import PageRankOri
+
 import time
 import csv
 
@@ -26,14 +27,14 @@ class ImprovedPageRankCancerGeneRanking():
         beta = 0.5,
         network_weight_flag = True,
         output_file_path = None,
-        enhanced = True,
+        algorithm = None,
         ):
 
         t0 = time.perf_counter()
         start_time = time.perf_counter()
         self.alpha = alpha
         self.beta = beta
-        self.enhanced = enhanced
+        self.algorithm = algorithm
         
         print("Loading Networks....")
         self.file_loader_step = Loader(ppi_file_path,
@@ -60,6 +61,7 @@ class ImprovedPageRankCancerGeneRanking():
         t0 = time.perf_counter()
         print("Computing aggragation with policy:", matrix_aggregation_policy,"....")
         G, V = self.compute_matrix_aggregation(PPI, CO_expression, matrix_aggregation_policy)
+        print(f"Graph has {len(G.nodes())} nodes and {len(G.edges())} edges")
         
         print("Time for computing Aggregation Matrix:", time.perf_counter() - t0)
         print()
@@ -101,10 +103,10 @@ class ImprovedPageRankCancerGeneRanking():
 
         print("Exectuting Pagerank....")
 
-        if self.enhanced:
+        if self.algorithm == "biorank":
             core = PageRankCore(p_0, G)
         else:
-            core = PageRankOri(G)	
+            core = PageRankOri(G)
 
         self.ranked_list = core.run()
         print("Time for Exectuting Page_rank", time.perf_counter() - t0)
