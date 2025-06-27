@@ -1,6 +1,6 @@
-# 🧬 BioRank: Enhanced PageRank for Cancer Gene Prioritization
+# 🧬 Prioritizing Cancer Therapeutic Genes Using BioRank: A Biologically-Informed PageRank Framework
 
-> A GUI-based tool for integrating multi-omics data to prioritize cancer-related genes using Original and Enhanced PageRank algorithms.
+> A GUI-based tool for integrating multi-omics data to prioritize cancer-related genes using BioRank.
 
 ---
 
@@ -26,7 +26,7 @@ The original source code is available at:
 **BioRank** enhances and expands their framework by providing:
 
 - An intuitive graphical user interface (GUI) that enables biomedical researchers to run analyses without coding
-- Integration of both the original and enhanced **PageRank algorithms** for gene prioritization
+- Integration BioRank (enhanced **PageRank algorithms**) for gene prioritization
 - Evaluation and validation of prioritized genes against curated cancer knowledgebases such as **OncoKB**
 - Exportable outputs and automated workflows for reproducibility and downstream analysis
 
@@ -34,7 +34,7 @@ If you use **BioRank** or its underlying methods in your work, please cite both 
 
 ## 📘 Introduction
 
-Recent studies have shown that PageRank-based approaches can help identify disease-related genes from biological networks. However, traditional methods mainly rely on network topology and overlook vital biological factors such as gene expression, functional annotations, and similarity between gene pairs. In this study, we propose an Enhanced PageRank algorithm that integrates multi-omics data—including PPI networks, co-expression, gene ontology (GO, KEGG, Reactome), and differentially expressed genes—into a unified framework. By modifying the personalization vector and applying weighted diffusion, our method improves the ability to prioritize cancer-related genes more accurately than classical PageRank and other network propagation approaches.
+Recent studies have shown that PageRank-based approaches can help identify disease-related genes from biological networks. However, traditional methods mainly rely on network topology and overlook vital biological factors such as gene expression, functional annotations, and similarity between gene pairs. In this study, we propose BioRank (an Enhanced PageRank algorithm) that integrates multi-omics data—including PPI networks, co-expression, gene ontology (GO, KEGG, Reactome), and differentially expressed genes—into a unified framework. By modifying the personalization vector and applying weighted diffusion, our method improves the ability to prioritize cancer-related genes more accurately than classical PageRank and other network propagation approaches.
 
 <p align="center">
   <img src="imgs/Ảnh2.jpg" alt="BioRank Overview" width="600"/>
@@ -44,14 +44,14 @@ Recent studies have shown that PageRank-based approaches can help identify disea
 
 **BioRank** is a Python-based GUI application built with Tkinter to enable biomedical researchers to:
 
-- Run **Original** and **Enhanced PageRank** for gene prioritization  
-- Perform step-by-step **biological data preprocessing**  
+- Run **BioRank** for gene prioritization  
+- Perform step-by-step **data preprocessing**  
 - Integrate data from PPI, co-expression networks, and ontologies  
 - Export ranked gene outputs  
 
 The GUI includes:
 
-- **Left Panel** – Run PageRank  
+- **Left Panel** – Run BioRank
 - **Right Panel** – Preprocessing functions (ontology, co-expression, TCGA parsing)
 
 ---
@@ -60,7 +60,7 @@ The GUI includes:
 
 | Function                            | Description                                                                 |
 |-------------------------------------|-----------------------------------------------------------------------------|
-| 🎯 Run PageRank (Original/Enhanced) | PageRank ranking over integrated biological networks                     |
+| 🎯 Run Biorank | BioRank ranking over integrated biological networks                     |
 | 🧠 Ontology Graph Construction       | Combine GO, KEGG, Reactome into a unified bipartite ontology graph          |
 | 🧬 Disease Ontology Enrichment       | Enrich disease-specific annotations from seed genes                         |
 | 📊 DE Genes + Co-expression          | Identify DE genes & build correlation-based co-expression networks          |
@@ -77,11 +77,14 @@ Install required dependencies:
 ```
 pip install -r requirements.txt
 ```
+The dataset can be found [here](https://drive.google.com/drive/folders/1vDQ26QL_uSOz9uE4S-L3Au3tmK1XqkcI).  
+Due to the large file size, it could not be uploaded directly to GitHub.
+
 ## 📂 Project Structure
 ```
 BioRank/
 ├── main.py                 # GUI Launcher  
-├── improved_pagerank/             # Core PageRank algorithms  
+├── BioRank/             # Core BioRank algorithms  
 ├── data_preprocessing/            # Data processing scripts  
 ├── output/                        # Generated outputs  
 ├── dataset/                       # Dataset folder 
@@ -124,8 +127,8 @@ Required Input Files:
     - RNA-seq Directory
     - Output Directory
 ```
-## 🔁 Run PageRank
-Run PageRank in the GUI. Required Input Files:
+## 🔁 Run BioRank
+Run BioRank in the GUI. Required Input Files:
 ```
   -p ppi.tsv \
   -c coexpr.tsv \
