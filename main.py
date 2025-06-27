@@ -1,5 +1,6 @@
 import tkinter as tk
 from tkinter import filedialog, messagebox
+import threading
 import os
 import time
 import sys
@@ -68,7 +69,12 @@ class BioRankGUI:
         add_input("Gene-Ontology Mapping File (-a):", "anno")
         add_input("Disease-Specific Ontologies (-do):", "disease_onto")
 
+        run_button = self.styled_button(window, "▶ Run", None)
+        run_button.pack(pady=10)
+
         def run():
+            run_button.config(state="disabled", text="⏳ Running...")
+
             args = {
                 "ppi_file_path": entries["ppi"].get(),
                 "co_expression_file_path": entries["coexpr"].get(),
@@ -81,19 +87,26 @@ class BioRankGUI:
                 "personalization_vector_aggregation_policy": "Sum",
                 "alpha": 0.5,
                 "beta": 0.5,
-                "network_weight_flag": True
+                "network_weight_flag": True,
+                "algorithm": algorithm,
+                "output_file_path": "output/LATEST_RESULT.csv"
             }
-            os.makedirs("output", exist_ok=True)
-            output_path = "output/LATEST_RESULT.csv"
-            args["output_file_path"] = output_path
-            args["algorithm"] = algorithm
-            try:
-                BioRankCancerGeneRanking(**args)
-                messagebox.showinfo("Done", f"✅ {title} completed.")
-            except Exception as e:
-                messagebox.showerror("Error", str(e))
 
-        self.styled_button(window, "▶ Run", run).pack(pady=10)
+            os.makedirs("output", exist_ok=True)
+
+            def _run_task():
+                try:
+                    BioRankCancerGeneRanking(**args)
+                    messagebox.showinfo("Done", f"✅ {title} completed.")
+                except Exception as e:
+                    messagebox.showerror("Error", str(e))
+                finally:
+                    run_button.config(state="normal", text="▶ Run")
+
+            threading.Thread(target=_run_task, daemon=True).start()
+
+        run_button.config(command=run)
+
         tk.Button(window, text="🔙 Back", command=window.destroy).pack(pady=(0, 10))
 
     def init_preprocess_tab(self):
