@@ -11,6 +11,27 @@
 🏛️ Project: BioRank, 2025
 ---
 
+## 📚 Citation
+
+This project, **BioRank**, was developed based on and extends the methods proposed in the following publication:
+
+> M. Gentili, L. Martini, M. Sponziello, and L. Becchetti,  
+> *"Biological Random Walks: Multi-Omics Integration for Disease Gene Prioritization"*,  
+> *Bioinformatics*, vol. 38, no. 17, pp. 4145–4152, 2022.  
+> [https://doi.org/10.1093/bioinformatics/btac446](https://doi.org/10.1093/bioinformatics/btac446)
+
+The original source code is available at:  
+🔗 [https://github.com/LeoM93/BiologicalRandomWalks](https://github.com/LeoM93/BiologicalRandomWalks)
+
+**BioRank** enhances and expands their framework by providing:
+
+- An intuitive graphical user interface (GUI) that enables biomedical researchers to run analyses without coding
+- Integration of both the original and enhanced **PageRank algorithms** for gene prioritization
+- Evaluation and validation of prioritized genes against curated cancer knowledgebases such as **OncoKB**
+- Exportable outputs and automated workflows for reproducibility and downstream analysis
+
+If you use **BioRank** or its underlying methods in your work, please cite both the original publication and this project.
+
 ## 📘 Introduction
 
 Recent studies have shown that PageRank-based approaches can help identify disease-related genes from biological networks. However, traditional methods mainly rely on network topology and overlook vital biological factors such as gene expression, functional annotations, and similarity between gene pairs. In this study, we propose an Enhanced PageRank algorithm that integrates multi-omics data—including PPI networks, co-expression, gene ontology (GO, KEGG, Reactome), and differentially expressed genes—into a unified framework. By modifying the personalization vector and applying weighted diffusion, our method improves the ability to prioritize cancer-related genes more accurately than classical PageRank and other network propagation approaches.
@@ -59,7 +80,7 @@ pip install -r requirements.txt
 ## 📂 Project Structure
 ```
 BioRank/
-├── pagerank_gui.py                 # GUI Launcher  
+├── main.py                 # GUI Launcher  
 ├── improved_pagerank/             # Core PageRank algorithms  
 ├── data_preprocessing/            # Data processing scripts  
 ├── output/                        # Generated outputs  
@@ -70,7 +91,7 @@ BioRank/
 ## 🖱 How to Launch GUI
 To start the GUI, run the following command in your terminal:
 ```
-python pagerank_gui.py
+python main.py
 ```
 ## ⚙️ Data Preprocessing Functions
 ### 1. 🧱 Build Ontology Graph

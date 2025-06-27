@@ -1,142 +1,262 @@
-# import tkinter as tk
-# from tkinter import filedialog, messagebox, ttk
-# import os
-# import time
-# import shutil
-# import pandas as pd
+import tkinter as tk
+from tkinter import filedialog, messagebox
+import os
+import time
+import sys
+import shutil
+import pandas as pd
+from BioRank.BioRank import BioRankCancerGeneRanking
+from data_preprocessing.compute_ontology_graph import OntologyGraph
+from data_preprocessing.compute_disease_specific_ontologies import DiseaseOntologies
+from data_preprocessing.compute_co_expression_and_de_genes import create_de_genes, get_top_correlations
+from data_preprocessing.TCGA_analyzer import TCGAAnalyzer
 
-# from improved_pagerank.ImprovedPageRank import ImprovedPageRankCancerGeneRanking
+class BioRankGUI:
+    def __init__(self, root):
+        self.root = root
+        self.root.title("Prioritized Genes Tool")
+        if hasattr(sys, '_MEIPASS'):
+            icon_path = os.path.join(sys._MEIPASS, "icon.ico")
+        else:
+            icon_path = os.path.abspath("icon.ico")
+        self.root.iconbitmap(default=icon_path)
+        self.root.geometry("1000x400")
+        self.root.configure(bg="white")
 
-# class PageRankApp:
-#     def __init__(self, root):
-#         self.root = root
-#         self.root.title("Cancer Gene Prioritization using Improved PageRank")
-#         self.root.geometry("800x480")
-#         self.root.resizable(False, False)
-#         self.inputs = {}
-#         self.last_output_path = None
+        main_frame = tk.Frame(self.root, bg="white")
+        main_frame.pack(fill='both', expand=True, padx=20, pady=20)
 
-#         ttk.Style().configure("TButton", padding=6, relief="flat", font=("Segoe UI", 10))
-#         ttk.Style().configure("TLabel", font=("Segoe UI", 10))
-#         ttk.Style().configure("TEntry", font=("Segoe UI", 10))
+        self.left_frame = tk.LabelFrame(main_frame, text="Prioritized Genes", font=("Segoe UI", 12, "bold"), bg="white")
+        self.left_frame.pack(side="left", fill="both", expand=True, padx=10, pady=10)
 
-#         self.build_gui()
+        self.right_frame = tk.LabelFrame(main_frame, text="Data Preprocessing", font=("Segoe UI", 12, "bold"), bg="white")
+        self.right_frame.pack(side="left", fill="both", expand=True, padx=10, pady=10)
 
-#     def build_gui(self):
-#         frame = ttk.Frame(self.root, padding=15)
-#         frame.pack(fill="both", expand=True)
+        self.last_output_path = None
+        self.init_run_buttons()
+        self.init_preprocess_tab()
 
-#         label = ttk.Label(frame, text="Input Files", font=("Segoe UI", 14, "bold"))
-#         label.grid(row=0, column=0, columnspan=3, pady=(0, 15), sticky="w")
+    def styled_button(self, parent, text, command):
+        return tk.Button(parent, text=text, bg="#0078D7", fg="white", font=("Segoe UI", 10, "bold"), command=command, relief="flat", padx=10, pady=5)
 
-#         self.create_file_input(frame, "Protein-Protein Interaction Network (-p):", "ppi", 1)
-#         self.create_file_input(frame, "Co-expression Network (-c):", "coexpr", 2)
-#         self.create_file_input(frame, "Seed Genes File (-s):", "seed", 3)
-#         self.create_file_input(frame, "Differentially Expressed Genes (-de):", "deg", 4)
-#         self.create_file_input(frame, "Gene-Ontology Mapping File (-a):", "anno", 5)
-#         self.create_file_input(frame, "Disease-Specific Ontologies (-do):", "disease_onto", 6)
+    def init_run_buttons(self):
+        tk.Label(self.left_frame, text="Choose a Algorithm:", font=("Arial", 12, "bold")).pack(pady=10)
+        self.styled_button(self.left_frame, "▶ Run BioRank", self.open_biorank_window).pack(pady=10)
 
-#         # Run button
-#         self.run_button = ttk.Button(frame, text="▶ Run PageRank", command=self.run_pagerank)
-#         self.run_button.grid(row=7, column=0, pady=(20, 10), sticky="w")
+    def open_biorank_window(self):
+        self.create_biorank_input_window("BioRank", algorithm="biorank")
 
-#         # Save button (hidden initially)
-#         self.download_button = ttk.Button(frame, text="💾 Save Result As...", command=self.save_as)
-#         self.download_button.grid(row=7, column=1, pady=(20, 10), sticky="e")
-#         self.download_button.grid_remove()
+    def create_biorank_input_window(self, title, algorithm):
+        window = tk.Toplevel(self.root)
+        window.title(title)
+        window.geometry("700x400")
+        entries = {}
 
-#         # Status
-#         self.status = ttk.Label(frame, text="", foreground="green")
-#         self.status.grid(row=8, column=0, columnspan=3, sticky="w")
+        def add_input(label, key):
+            frame = tk.Frame(window)
+            frame.pack(fill="x", padx=10, pady=6)
+            tk.Label(frame, text=label, width=35, anchor="w").pack(side="left")
+            entry = tk.Entry(frame, width=50)
+            entry.pack(side="left", padx=5)
+            entries[key] = entry
+            tk.Button(frame, text="Browse", command=lambda e=entry: self.browse_file(e, window)).pack(side="left")
 
-#     def create_file_input(self, parent, label_text, key, row):
-#         label = ttk.Label(parent, text=label_text)
-#         label.grid(row=row, column=0, sticky="w", pady=4)
+        add_input("PPI Network (-p):", "ppi")
+        add_input("Co-expression Network (-c):", "coexpr")
+        add_input("Seed Genes File (-s):", "seed")
+        add_input("Differentially Expressed Genes (-de):", "deg")
+        add_input("Gene-Ontology Mapping File (-a):", "anno")
+        add_input("Disease-Specific Ontologies (-do):", "disease_onto")
 
-#         entry = ttk.Entry(parent, width=60)
-#         entry.grid(row=row, column=1, padx=5)
-#         self.inputs[key] = entry
+        def run():
+            args = {
+                "ppi_file_path": entries["ppi"].get(),
+                "co_expression_file_path": entries["coexpr"].get(),
+                "seed_file_path": entries["seed"].get(),
+                "secondary_seed_file_path": entries["deg"].get(),
+                "map__gene__ontologies_file_path": entries["anno"].get(),
+                "disease_ontology_file_path": entries["disease_onto"].get(),
+                "matrix_aggregation_policy": "convex_combination",
+                "personalization_vector_creation_policies": ["topological", "biological"],
+                "personalization_vector_aggregation_policy": "Sum",
+                "alpha": 0.5,
+                "beta": 0.5,
+                "network_weight_flag": True
+            }
+            os.makedirs("output", exist_ok=True)
+            output_path = "output/LATEST_RESULT.csv"
+            args["output_file_path"] = output_path
+            args["algorithm"] = algorithm
+            try:
+                BioRankCancerGeneRanking(**args)
+                messagebox.showinfo("Done", f"✅ {title} completed.")
+            except Exception as e:
+                messagebox.showerror("Error", str(e))
 
-#         def browse():
-#             path = filedialog.askopenfilename()
-#             if path:
-#                 entry.delete(0, tk.END)
-#                 entry.insert(0, path)
+        self.styled_button(window, "▶ Run", run).pack(pady=10)
+        tk.Button(window, text="🔙 Back", command=window.destroy).pack(pady=(0, 10))
 
-#         button = ttk.Button(parent, text="Browse", command=browse)
-#         button.grid(row=row, column=2, padx=(5, 0))
+    def init_preprocess_tab(self):
+        tk.Label(self.right_frame, text="Choose a preprocessing function:", font=("Arial", 12, "bold")).pack(pady=10)
 
-#     def run_pagerank(self):
-#         try:
-#             args = {
-#                 "ppi_file_path": self.inputs["ppi"].get(),
-#                 "co_expression_file_path": self.inputs["coexpr"].get(),
-#                 "seed_file_path": self.inputs["seed"].get(),
-#                 "secondary_seed_file_path": self.inputs["deg"].get(),
-#                 "map__gene__ontologies_file_path": self.inputs["anno"].get(),
-#                 "disease_ontology_file_path": self.inputs["disease_onto"].get(),
-#                 "matrix_aggregation_policy": "convex_combination",
-#                 "personalization_vector_creation_policies": ["topological", "biological"],
-#                 "personalization_vector_aggregation_policy": "Sum",
-#                 "restart_prob": 0.9,
-#                 "alpha": 0.5,
-#                 "beta": 0.5,
-#                 "network_weight_flag": True
-#             }
+        button_width = 35
+        actions = [
+            ("Compute Ontology Graph", self.run_ontology_graph),
+            ("Compute Disease-Specific Ontologies", self.run_disease_ontologies),
+            ("Compute DE Genes + Co-expression", self.run_de_genes_and_coexpr),
+            ("Create Tumor-Control Table", self.run_tcga_table)
+        ]
+        for text, command in actions:
+            tk.Button(
+                self.right_frame, text=text,
+                width=button_width,
+                font=("Segoe UI", 10, "bold"),
+                bg="#0078D7", fg="white",
+                command=command
+            ).pack(pady=5)
 
-#             os.makedirs("output", exist_ok=True)
-#             output_path = "output/LATEST_RESULT.csv"
-#             args["output_file_path"] = output_path
-#             self.last_output_path = output_path
+    def browse_file(self, entry, parent):
+        path = filedialog.askopenfilename(parent=parent)
+        if path:
+            entry.delete(0, tk.END)
+            entry.insert(0, path)
 
-#             for key, val in args.items():
-#                 if key.endswith("_file_path") and (not val or not os.path.exists(val)):
-#                     raise ValueError(f"File not found or missing:\n{val}")
+    def browse_folder(self, entry, parent):
+        path = filedialog.askdirectory(parent=parent)
+        if path:
+            entry.delete(0, tk.END)
+            entry.insert(0, path)
 
-#             self.status.config(text="⏳ Running PageRank...", foreground="blue")
-#             self.download_button.grid_remove()
-#             self.root.update()
+    def save_as(self):
+        if not self.last_output_path or not os.path.exists(self.last_output_path):
+            messagebox.showerror("No result", "No result file found.")
+            return
+        path = filedialog.asksaveasfilename(defaultextension=".csv")
+        if path:
+            shutil.copyfile(self.last_output_path, path)
+            messagebox.showinfo("Saved", f"✅ File saved to:\n{path}")
 
-#             start = time.perf_counter()
-#             model = ImprovedPageRankCancerGeneRanking(**args)
-#             runtime = time.perf_counter() - start
+    def create_input_window(self, title, inputs, process_func, output_files):
+        window = tk.Toplevel(self.root)
+        window.title(title)
+        window.geometry("700x450")
+        entries = {}
 
-#             self.status.config(text=f"✅ Completed in {runtime:.2f} seconds", foreground="green")
-#             self.download_button.grid()
-#             self.show_results(output_path)
+        for label, key, is_folder in inputs:
+            frame = tk.Frame(window)
+            frame.pack(fill="x", padx=10, pady=5)
+            tk.Label(frame, text=label, width=35, anchor="w").pack(side="left")
+            entry = tk.Entry(frame, width=50)
+            entry.pack(side="left", padx=5)
+            entries[key] = entry
+            browse = self.browse_folder if is_folder else self.browse_file
+            tk.Button(frame, text="Browse", command=lambda e=entry, b=browse: b(e, window)).pack(side="left")
 
-#         except Exception as e:
-#             import traceback
-#             traceback.print_exc()
-#             self.status.config(text=f"❌ Error: {e}", foreground="red")
-#             messagebox.showerror("Error", str(e))
+        tk.Label(window, text="Output file(s) will be generated internally.").pack(pady=(5, 0))
 
-#     def show_results(self, filepath):
-#         try:
-#             df = pd.read_csv(filepath, sep="\t")
-#             result_window = tk.Toplevel(self.root)
-#             result_window.title("PageRank Result")
+        def run():
+            files = {k: e.get() for k, e in entries.items()}
+            if all(files.values()):
+                os.makedirs("output", exist_ok=True)
+                paths = {key: os.path.join("output", name) for key, name in output_files.items()}
+                process_func(files, paths)
 
-#             text = tk.Text(result_window, wrap="none", height=25, width=80)
-#             text.pack(expand=True, fill="both", padx=10, pady=10)
-#             text.insert("end", df.to_string(index=False))
-#         except Exception as e:
-#             messagebox.showerror("Display Error", f"Could not load result: {e}")
+                def save():
+                    for key, out_file in paths.items():
+                        path = filedialog.asksaveasfilename(title=f"Save {key}", defaultextension=os.path.splitext(out_file)[1], parent=window)
+                        if path:
+                            shutil.copyfile(out_file, path)
+                    messagebox.showinfo("Saved", "✅ Files saved successfully.", parent=window)
 
-#     def save_as(self):
-#         if not self.last_output_path or not os.path.exists(self.last_output_path):
-#             messagebox.showerror("No result", "No result file found.")
-#             return
+                self.styled_button(window, "💾 Save Result(s)", save).pack(pady=5)
+                messagebox.showinfo("Done", f"✅ {title} completed.", parent=window)
+            else:
+                messagebox.showerror("Missing File", "Please select all required files.", parent=window)
 
-#         path = filedialog.asksaveasfilename(defaultextension=".csv")
-#         if path:
-#             try:
-#                 shutil.copyfile(self.last_output_path, path)
-#                 messagebox.showinfo("Saved", f"✅ File saved to:\n{path}")
-#             except Exception as e:
-#                 messagebox.showerror("Save Error", f"Could not save file:\n{e}")
+        self.styled_button(window, "Run", run).pack(pady=10)
+        tk.Button(window, text="🔙 Back", command=window.destroy).pack(pady=(0, 10))
 
-# if __name__ == "__main__":
-#     root = tk.Tk()
-#     app = PageRankApp(root)
-#     root.mainloop()
+    def run_ontology_graph(self):
+        self.create_input_window(
+            "Compute Ontology Graph",
+            [
+                ("GO .gaf File:", "go", False),
+                ("KEGG File:", "kegg", False),
+                ("Reactome File:", "reactome", False),
+                ("Uniprot-Ensembl Mapping File:", "uniprot", False),
+                ("KEGG-Uniprot Mapping File:", "keggmap", False)
+            ],
+            lambda f, p: OntologyGraph(
+                GO_file_path=f["go"],
+                KEGG_file_path=f["kegg"],
+                Reactome_file_path=f["reactome"],
+                output_file_path=p["ontology"],
+                uniprot_mapping_path=f["uniprot"],
+                kegg_mapping_path=f["keggmap"]
+            ).run(),
+            {"ontology": "ontology_output.tsv"}
+        )
+
+    def run_disease_ontologies(self):
+        self.create_input_window(
+            "Compute Disease-Specific Ontologies",
+            [
+                ("Ontology Graph File:", "onto", False),
+                ("Seed Genes File:", "seed", False)
+            ],
+            lambda f, p: DiseaseOntologies(
+                ontology_graph_file_path=f["onto"],
+                disease_seed_file_path=f["seed"],
+                output_file_path=p["disease"]
+            ).run(),
+            {"disease": "disease_ontology_output.txt"}
+        )
+
+    def run_de_genes_and_coexpr(self):
+        self.create_input_window(
+            "Compute DE Genes + Co-expression",
+            [
+                ("Tumor Expression Table:", "tumor", False),
+                ("Control Expression Table:", "control", False),
+                ("Identifier File:", "identifier", False)
+            ],
+            lambda f, p: (
+                create_de_genes(
+                    tumor_file_path=f["tumor"],
+                    control_file_path=f["control"],
+                    output_file_path=p["de"],
+                    threshold=2.5,
+                    identifier_file_path=f["identifier"]
+                ),
+                get_top_correlations(
+                    expression_file_path=f["tumor"],
+                    output_file_path=p["coexpr"],
+                    identifier_file_path=f["identifier"],
+                    threshold=0.7
+                )
+            ),
+            {"de": "de_genes.tsv", "coexpr": "coexpression.tsv"}
+        )
+
+    def run_tcga_table(self):
+        self.create_input_window(
+            "Create Tumor-Control Table",
+            [
+                ("GDC Sample Sheet:", "gdc", False),
+                ("Manifest File:", "manifest", False),
+                ("RNA-seq Directory:", "rna_dir", True),
+                ("Output Directory:", "output_dir", True)
+            ],
+            lambda f, p: TCGAAnalyzer(
+                sample_sheet_file_path=f["gdc"],
+                manifest_file_path=f["manifest"],
+                TCGA_directory_path=f["rna_dir"],
+                output_dir_path=f["output_dir"]
+            ).create_tumor_control_table(),
+            {}
+        )
+
+if __name__ == '__main__':
+    root = tk.Tk()
+    app = BioRankGUI(root)
+    root.mainloop()
