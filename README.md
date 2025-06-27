@@ -77,8 +77,8 @@ Install required dependencies:
 ```
 pip install -r requirements.txt
 ```
-The dataset can be found [here](https://drive.google.com/drive/folders/1vDQ26QL_uSOz9uE4S-L3Au3tmK1XqkcI).  
-Due to the large file size, it could not be uploaded directly to GitHub.
+Due to the dataset's large size and GitHub file size limitations, it is hosted on Google Drive:  
+📂 [Access the dataset here](https://drive.google.com/drive/folders/1vDQ26QL_uSOz9uE4S-L3Au3tmK1XqkcI)
 
 ## 📂 Project Structure
 ```
@@ -137,4 +137,17 @@ Run BioRank in the GUI. Required Input Files:
   -a ontology.tsv \
   -do disease_specific_ontology.txt \
 ```
+## 🖼 GUI Snapshot
+
+<p align="center">
+  <img src="imgs/gui_main.png" width="500"/>
+</p>
+
+*Main GUI for executing BioRank and preprocessing data.*
+
+<p align="center">
+  <img src="imgs/input_window.png" width="500"/>
+</p>
+
+*Input configuration window for BioRank's enhanced algorithm.*
 
