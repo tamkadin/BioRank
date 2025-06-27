@@ -37,7 +37,7 @@ If you use **BioRank** or its underlying methods in your work, please cite both 
 Recent studies have shown that PageRank-based approaches can help identify disease-related genes from biological networks. However, traditional methods mainly rely on network topology and overlook vital biological factors such as gene expression, functional annotations, and similarity between gene pairs. In this study, we propose an Enhanced PageRank algorithm that integrates multi-omics data—including PPI networks, co-expression, gene ontology (GO, KEGG, Reactome), and differentially expressed genes—into a unified framework. By modifying the personalization vector and applying weighted diffusion, our method improves the ability to prioritize cancer-related genes more accurately than classical PageRank and other network propagation approaches.
 
 <p align="center">
-  <img src="imgs/1.jpg" alt="BioRank Overview" width="600"/>
+  <img src="imgs/Ảnh2.jpg" alt="BioRank Overview" width="600"/>
 </p>
 
 ## 🖥 Application Overview
