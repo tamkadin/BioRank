@@ -5,16 +5,16 @@ import time
 import sys
 import shutil
 import pandas as pd
-from improved_pagerank.ImprovedPageRank import ImprovedPageRankCancerGeneRanking
+from BioRank.BioRank import BioRankCancerGeneRanking
 from data_preprocessing.compute_ontology_graph import OntologyGraph
 from data_preprocessing.compute_disease_specific_ontologies import DiseaseOntologies
 from data_preprocessing.compute_co_expression_and_de_genes import create_de_genes, get_top_correlations
 from data_preprocessing.TCGA_analyzer import TCGAAnalyzer
 
-class PageRankGUI:
+class BioRankGUI:
     def __init__(self, root):
         self.root = root
-        self.root.title("Cancer Gene Prioritization Tool")
+        self.root.title("Prioritized Genes Tool")
         if hasattr(sys, '_MEIPASS'):
             icon_path = os.path.join(sys._MEIPASS, "icon.ico")
         else:
@@ -26,7 +26,7 @@ class PageRankGUI:
         main_frame = tk.Frame(self.root, bg="white")
         main_frame.pack(fill='both', expand=True, padx=20, pady=20)
 
-        self.left_frame = tk.LabelFrame(main_frame, text="Run PageRank", font=("Segoe UI", 12, "bold"), bg="white")
+        self.left_frame = tk.LabelFrame(main_frame, text="Prioritized Genes", font=("Segoe UI", 12, "bold"), bg="white")
         self.left_frame.pack(side="left", fill="both", expand=True, padx=10, pady=10)
 
         self.right_frame = tk.LabelFrame(main_frame, text="Data Preprocessing", font=("Segoe UI", 12, "bold"), bg="white")
@@ -41,16 +41,12 @@ class PageRankGUI:
 
     def init_run_buttons(self):
         tk.Label(self.left_frame, text="Choose a Algorithm:", font=("Arial", 12, "bold")).pack(pady=10)
-        self.styled_button(self.left_frame, "▶ PageRank (Original PageRank)", self.open_original_pagerank_window).pack(pady=10)
-        self.styled_button(self.left_frame, "▶ BioRank (Enhanced PageRank)", self.open_enhanced_pagerank_window).pack(pady=10)
+        self.styled_button(self.left_frame, "▶ Run BioRank", self.open_biorank_window).pack(pady=10)
 
-    def open_original_pagerank_window(self):
-        self.create_pagerank_input_window("PageRank (Original PageRank)", algorithm="ori")
+    def open_biorank_window(self):
+        self.create_biorank_input_window("BioRank", algorithm="biorank")
 
-    def open_enhanced_pagerank_window(self):
-        self.create_pagerank_input_window("BioRank (Enhanced PageRank)", algorithm="biorank")
-
-    def create_pagerank_input_window(self, title, algorithm):
+    def create_biorank_input_window(self, title, algorithm):
         window = tk.Toplevel(self.root)
         window.title(title)
         window.geometry("700x400")
@@ -92,7 +88,7 @@ class PageRankGUI:
             args["output_file_path"] = output_path
             args["algorithm"] = algorithm
             try:
-                ImprovedPageRankCancerGeneRanking(**args)
+                BioRankCancerGeneRanking(**args)
                 messagebox.showinfo("Done", f"✅ {title} completed.")
             except Exception as e:
                 messagebox.showerror("Error", str(e))
@@ -262,5 +258,5 @@ class PageRankGUI:
 
 if __name__ == '__main__':
     root = tk.Tk()
-    app = PageRankGUI(root)
+    app = BioRankGUI(root)
     root.mainloop()
