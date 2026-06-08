@@ -77,8 +77,8 @@ Install required dependencies:
 ```
 pip install -r requirements.txt
 ```
-Due to the dataset's large size and GitHub file size limitations, it is hosted on Google Drive:  
-📂 [Access the dataset here](https://drive.google.com/drive/folders/1vDQ26QL_uSOz9uE4S-L3Au3tmK1XqkcI)
+The dataset can be found [here](https://drive.google.com/drive/folders/1vDQ26QL_uSOz9uE4S-L3Au3tmK1XqkcI).  
+Due to the large file size, it could not be uploaded directly to GitHub.
 
 ## 📂 Project Structure
 ```
