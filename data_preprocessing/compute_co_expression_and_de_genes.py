@@ -2,25 +2,35 @@ import csv
 import numpy as np
 import math
 
-def __load_df__(file_path, Identifiers):
+def __load_df__(file_path, Identifiers, is_gtex=False):
     map__ensembl_id__gene_expression = {}
     with open(file_path, "r") as f:
         csv_reader = csv.reader(f, delimiter="\t")
         for index, row in enumerate(csv_reader):
-            if index == 0:
-                continue
-            ensembl_id = row[0].split(".")[0]
-            if ensembl_id in map__ensembl_id__gene_expression:
-                continue
-            if ensembl_id not in Identifiers:
-                continue
-            values = [float(v) for v in row[1:]]
-            map__ensembl_id__gene_expression[ensembl_id] = np.array(values)
+            # GTEx GCT format
+            if is_gtex:
+                if index < 3:  # bỏ #1.2, dimensions, header
+                    continue
+                ensembl_id = row[0].split(".")[0]
+                if ensembl_id not in Identifiers:
+                    continue
+                values = [float(v) for v in row[2:]]  # bỏ Name + GeneName
+            else:
+                # TCGA format
+                if index == 0:  # bỏ header
+                    continue
+                ensembl_id = row[0].split(".")[0]
+                if ensembl_id not in Identifiers:
+                    continue
+                values = [float(v) for v in row[1:]]  # bỏ Ensembl ID
+            # Lưu gene
+            if ensembl_id not in map__ensembl_id__gene_expression:
+                map__ensembl_id__gene_expression[ensembl_id] = np.array(values)
     return map__ensembl_id__gene_expression
 
 def __load_identifier__(file_path):
     with open(file_path, "r") as f:
-        return {row[0] for row in csv.reader(f, delimiter="\t")}
+        return {row[0].split(".")[0] for row in csv.reader(f, delimiter="\t")}
 
 def create_de_genes(
     tumor_file_path,
@@ -33,8 +43,8 @@ def create_de_genes(
         raise ValueError("Identifier file path must be provided.")
 
     identifiers = __load_identifier__(identifier_file_path)
-    tumor_df = __load_df__(tumor_file_path, identifiers)
-    control_df = __load_df__(control_file_path, identifiers)
+    tumor_df = __load_df__(tumor_file_path, identifiers, is_gtex=False)
+    control_df = __load_df__(control_file_path, identifiers, is_gtex=True)
 
     intersection = list(set(tumor_df) & set(control_df))
     table = []
@@ -67,6 +77,10 @@ def __np_pearson_cor__(x, y):
     yv = y - y.mean(axis=0)
     xvss = (xv * xv).sum(axis=0)
     yvss = (yv * yv).sum(axis=0)
+
+    if xvss == 0 or yvss == 0:
+        return 0.0  # hoặc np.nan nếu muốn loại bỏ
+
     result = np.matmul(xv.transpose(), yv) / np.sqrt(np.outer(xvss, yvss))
     return np.clip(result[0][0], -1.0, 1.0)
 
@@ -74,10 +88,11 @@ def get_top_correlations(
     expression_file_path,
     output_file_path,
     identifier_file_path,
-    threshold=0.7
+    threshold=0.7,
+    is_gtex=False
 ):
     identifiers = __load_identifier__(identifier_file_path)
-    df = __load_df__(expression_file_path, identifiers)
+    df = __load_df__(expression_file_path, identifiers, is_gtex=is_gtex)
     gene_list = list(df.keys())
 
     co_expr_list = []
