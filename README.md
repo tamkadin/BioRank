@@ -137,4 +137,17 @@ Run BioRank in the GUI. Required Input Files:
   -a ontology.tsv \
   -do disease_specific_ontology.txt \
 ```
+## 🖼 GUI Snapshot
+
+<p align="center">
+  <img src="imgs/gui_main.png" width="500"/>
+</p>
+
+*Main GUI for executing BioRank and preprocessing data.*
+
+<p align="center">
+  <img src="imgs/input_window.png" width="500"/>
+</p>
+
+*Input configuration window for BioRank's enhanced algorithm.*
 
