@@ -162,9 +162,6 @@ BioRank/
 Important docs:
 
 - [docs/setup_and_run_biorank_v2.md](docs/setup_and_run_biorank_v2.md): detailed setup, run, and troubleshooting guide.
-- [docs/BioRank_pipeline_and_architecture.md](docs/BioRank_pipeline_and_architecture.md): current pipeline and architecture.
-- [docs/USER_WORKFLOW_AND_SPECIFICATION.md](docs/USER_WORKFLOW_AND_SPECIFICATION.md): UI workflow notes.
-- [docs/AGENT_RULES.md](docs/AGENT_RULES.md): maintainer rules for code changes.
 
 ---
 
@@ -194,7 +191,7 @@ The GUI auto-detects default ranking inputs under `data_set/`:
 The full dataset is large, so it is not uploaded directly to git. Download it from Google Drive:
 
 ```text
-https://drive.google.com/drive/folders/1LU25AoEO8PNBLvk0TU5PAyL1kwb7B_mr?usp=sharing
+https://drive.google.com/drive/folders/11TY1KGRpxG2VzStKO1rb5NjBtcNClysP?usp=sharing
 ```
 
 After downloading or extracting the folder, rename the dataset folder to exactly:

@@ -100,7 +100,7 @@ BioRank v2 expects the input dataset under `data_set/`.
 The dataset is large, so it is not uploaded directly to git. Download it from:
 
 ```text
-https://drive.google.com/drive/folders/1LU25AoEO8PNBLvk0TU5PAyL1kwb7B_mr?usp=sharing
+https://drive.google.com/drive/folders/11TY1KGRpxG2VzStKO1rb5NjBtcNClysP?usp=sharing
 ```
 
 After downloading or extracting the dataset, rename the folder to exactly:
