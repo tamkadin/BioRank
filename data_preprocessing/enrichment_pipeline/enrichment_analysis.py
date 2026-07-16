@@ -38,7 +38,8 @@ class EnrichmentAnalysis():
 
         if len(self.disease_genes_by_term_id) == 0:
             print("IMPOSSIBLE COMPUTE P VALUE: SET IS EMPTY")
-            exit(1)
+            return False
+        return True
 
 
     def find_biological_processes(self,):
@@ -105,7 +106,8 @@ class EnrichmentAnalysis():
 
     def get_enirchment_analysis(self):
 
-        self.group_disease_genes_by_term_id()
+        if not self.group_disease_genes_by_term_id():
+            return {}
         print("Enrichment Analysis is Starting.............")
 
         biological_processes = self.find_biological_processes()

@@ -12,9 +12,11 @@ class Loader():
 		
 		disease_ontology_file_path = None,
 		map_gene_ontologies_file_path = None,
+		cancellation_event = None,
 
 
 		):
+		self.cancellation_event = cancellation_event
 		if ppi_file_path != None:
 			self.ppi_file_path = ppi_file_path
 		else:
@@ -49,6 +51,7 @@ class Loader():
 
 
 	def run(self,):
+		self._check_cancelled()
 		
 		assert self.ppi_file_path != None or self.co_expression_file_path != None, "No network as input of Random Walks"
 		assert self.seed_file_path != None, "No Seed as input of Random Walks"
@@ -84,6 +87,10 @@ class Loader():
 
 		return PPI, CO_expression, seed_set, secondary_seed_set, map__gene__ontologies, disease_ontology
 
+	def _check_cancelled(self):
+		if self.cancellation_event is not None and self.cancellation_event.is_set():
+			raise RuntimeError("Operation cancelled.")
+
 
 	def load_map__gene__ontologies(self):
 		
@@ -93,6 +100,8 @@ class Loader():
 			csv_reader = csv.reader(fp, delimiter = "\t")
 
 			for index,row in enumerate(csv_reader):
+				if index % 10000 == 0:
+					self._check_cancelled()
 				if index == 0:
 					continue
 				
@@ -121,6 +130,8 @@ class Loader():
 			csv_reader = csv.reader(fp,delimiter = "\t")
 
 			for index, row in enumerate(csv_reader):
+				if index % 10000 == 0:
+					self._check_cancelled()
 
 				if index == 0:
 					continue
@@ -143,6 +154,8 @@ class Loader():
 			csv_reader = csv.reader(fp, delimiter = "\t")
 
 			for index, row in enumerate(csv_reader):
+				if index % 10000 == 0:
+					self._check_cancelled()
 
 				if has_header:
 					if index == 0:
@@ -190,6 +203,8 @@ class Loader():
 			csv_reader = csv.reader(fp,delimiter = "\t")
 
 			for index,row in enumerate(csv_reader):
+				if index % 10000 == 0:
+					self._check_cancelled()
 
 				if index == 0:
 					column_size = len(row)
@@ -211,4 +226,3 @@ class Loader():
 
 		if column_size == 2:
 			return seed_dict
-

@@ -1,140 +1,351 @@
-# 🧬 Prioritizing Cancer Therapeutic Genes Using BioRank: A Biologically-Informed PageRank Framework
+# Prioritizing Cancer Therapeutic Genes Using BioRank
 
-> A GUI-based tool for integrating multi-omics data to prioritize cancer-related genes using BioRank.
+BioRank is a GUI-based tool for integrating multi-omics biological data and prioritizing cancer-related genes with biologically informed PageRank and random-walk methods.
+
+The current implementation is **BioRank v2**, a desktop workspace that runs from `main.py`. It resolves runtime paths from the repository root, so the project can be copied to another machine as long as the expected `data_set/` layout is kept.
+
+For a step-by-step installation and run guide, see [docs/setup_and_run_biorank_v2.md](docs/setup_and_run_biorank_v2.md).
 
 ---
 
-## 👤 Author
+## Author
 
-**Nguyen Huu Tam**, **Pham Duc Tinh**, **Pham Van Hai**  
-📧 Email: [tamkadinner@gmail.com](mailto:tamkadin@gmail.com)  
-🏛️ Project: BioRank, 2025
+**Nguyen Huu Tam**, **Pham Duc Tinh**, **Pham Van Hai**
+
+Project: BioRank, 2025
+
 ---
 
-## 📚 Citation
+## Citation
 
-This project, **BioRank**, was developed based on and extends the methods proposed in the following publication:
+BioRank was developed based on and extends concepts from:
 
-> M. Gentili, L. Martini, M. Sponziello, and L. Becchetti,  
-> *"Biological Random Walks: Multi-Omics Integration for Disease Gene Prioritization"*,  
-> *Bioinformatics*, vol. 38, no. 17, pp. 4145–4152, 2022.  
-> [https://doi.org/10.1093/bioinformatics/btac446](https://doi.org/10.1093/bioinformatics/btac446)
+Gentili M., Martini L., Sponziello M., Becchetti L. "Biological Random Walks: Multi-Omics Integration for Disease Gene Prioritization." Bioinformatics, 2022. DOI: https://doi.org/10.1093/bioinformatics/btac446
 
-The original source code is available at:  
-🔗 [https://github.com/LeoM93/BiologicalRandomWalks](https://github.com/LeoM93/BiologicalRandomWalks)
+Original BiologicalRandomWalks repository:
 
-**BioRank** enhances and expands their framework by providing:
+```text
+https://github.com/LeoM93/BiologicalRandomWalks
+```
 
-- An intuitive graphical user interface (GUI) that enables biomedical researchers to run analyses without coding
-- Integration BioRank (enhanced **PageRank algorithms**) for gene prioritization
-- Evaluation and validation of prioritized genes against curated cancer knowledgebases such as **OncoKB**
-- Exportable outputs and automated workflows for reproducibility and downstream analysis
+If you use BioRank or its underlying methods in research, cite the original paper and this project.
 
-If you use **BioRank** or its underlying methods in your work, please cite both the original publication and this project.
+---
 
-## 📘 Introduction
+## Introduction
 
-Recent studies have shown that PageRank-based approaches can help identify disease-related genes from biological networks. However, traditional methods mainly rely on network topology and overlook vital biological factors such as gene expression, functional annotations, and similarity between gene pairs. In this study, we propose BioRank (an Enhanced PageRank algorithm) that integrates multi-omics data—including PPI networks, co-expression, gene ontology (GO, KEGG, Reactome), and differentially expressed genes—into a unified framework. By modifying the personalization vector and applying weighted diffusion, our method improves the ability to prioritize cancer-related genes more accurately than classical PageRank and other network propagation approaches.
+PageRank-based approaches can identify disease-related genes from biological networks, but classical graph methods mainly use network topology. BioRank extends this idea by integrating additional biological evidence:
+
+- Protein-protein interaction network, or PPI.
+- Co-expression network.
+- Disease seed genes.
+- Differentially expressed genes.
+- Gene ontology annotations from GO, KEGG, and Reactome.
+- Disease-specific ontology terms.
+
+The system builds an integrated weighted gene graph, creates biological and topological personalization vectors, then ranks candidate genes with Original PageRank, BRWR, BioRank Lite, or BioRank.
 
 <p align="center">
   <img src="imgs/Ảnh2.jpg" alt="BioRank Overview" width="600"/>
 </p>
 
-## 🖥 Application Overview
-
-**BioRank** is a Python-based GUI application built with Tkinter to enable biomedical researchers to:
-
-- Run **BioRank** for gene prioritization  
-- Perform step-by-step **data preprocessing**  
-- Integrate data from PPI, co-expression networks, and ontologies  
-- Export ranked gene outputs  
-
-The GUI includes:
-
-- **Left Panel** – Run BioRank
-- **Right Panel** – Preprocessing functions (ontology, co-expression, TCGA parsing)
-
 ---
 
-## 🚀 Features
+## Application Overview
 
-| Function                            | Description                                                                 |
-|-------------------------------------|-----------------------------------------------------------------------------|
-| 🎯 Run Biorank | BioRank ranking over integrated biological networks                     |
-| 🧠 Ontology Graph Construction       | Combine GO, KEGG, Reactome into a unified bipartite ontology graph          |
-| 🧬 Disease Ontology Enrichment       | Enrich disease-specific annotations from seed genes                         |
-| 📊 DE Genes + Co-expression          | Identify DE genes & build correlation-based co-expression networks          |
-| 🧫 TCGA Parser                       | Generate tumor/control expression tables from GDC/manifest and RNA-seq data |
+BioRank is a Python desktop application for biomedical researchers who need to:
 
----
+- Prepare biological input data through preprocessing tools.
+- Auto-detect required BioRank input files.
+- Build and preview an integrated biological network.
+- Run cancer gene prioritization algorithms.
+- Review ranked genes with gene symbol mapping and OncoKB hits.
+- Tune BioRank Lite alpha/beta parameters with Optuna.
 
-## 📦 Requirements
+Main entry point:
 
-**Python Version:** 3.7 or higher
-
-Install required dependencies:
-
-```
-pip install -r requirements.txt
-```
-The dataset can be found [here](https://drive.google.com/drive/folders/1vDQ26QL_uSOz9uE4S-L3Au3tmK1XqkcI).  
-Due to the large file size, it could not be uploaded directly to GitHub.
-
-## 📂 Project Structure
-```
-BioRank/
-├── main.py                 # GUI Launcher  
-├── BioRank/             # Core BioRank algorithms  
-├── data_preprocessing/            # Data processing scripts  
-├── output/                        # Generated outputs  
-├── dataset/                       # Dataset folder 
-├── README.md                      # This documentation  
-└── requirements.txt  
-```
-## 🖱 How to Launch GUI
-To start the GUI, run the following command in your terminal:
-```
+```powershell
 python main.py
 ```
-## ⚙️ Data Preprocessing Functions
-### 1. 🧱 Build Ontology Graph
-Required Input Files:
-```
-    - GO .gaf File
-    - KEGG File
-    - Reactome File
-    - Uniprot-Ensembl Mapping File
-    - KEGG-Uniprot Mapping File
-```
-### 2. 🧬 Disease-Specific Ontology Enrichment
-Required Input Files:
-```
-    - Ontology Graph File
-    - Seed Genes File
-```
-### 3. 🔬 Differentially Expressed Genes + Co-expression
-Required Input Files:
-```
-    - Tumor Expression Table
-    - Control Expression Table
-    - Identifier File
-```
-### 4. 🧫 TCGA Tumor-Control Table Generation
-Required Input Files:
-```
-    - GDC Sample Sheet
-    - Manifest File
-    - RNA-seq Directory
-    - Output Directory
-```
-## 🔁 Run BioRank
-Run BioRank in the GUI. Required Input Files:
-```
-  -p ppi.tsv \
-  -c coexpr.tsv \
-  -s seed_genes.txt \
-  -de de_genes.tsv \
-  -a ontology.tsv \
-  -do disease_specific_ontology.txt \
+
+---
+
+## Features
+
+| Function | Description |
+|---|---|
+| BioRank gene prioritization | Rank candidate cancer genes from integrated biological networks. |
+| Original PageRank | Run topology-only PageRank baseline on the integrated graph. |
+| BRWR Lite / BRWR | Run biological random walk with restart variants. |
+| BioRank Lite / BioRank | Run BioRank variants using biological and topological personalization. |
+| Network preview | Build the integrated graph and inspect first nodes/edges before ranking. |
+| Batch ranking | Run multiple disease and alpha/beta configurations sequentially. |
+| Ranking review | Export mapped TSV ranking with `GeneSymbol` and `OncoKBHit`. |
+| Optuna optimization | Multi-objective alpha/beta tuning for BioRank Lite. |
+| Data preprocessing | Build ontology graph, disease ontology, TCGA tumor/control tables, DE genes, and co-expression network. |
+
+---
+
+## BioRank v2 UI and Optuna Optimization
+
+BioRank v2 reorganizes the application as a workspace with four main screens:
+
+1. **Input Data Configuration**
+   - Select disease, dataset profile, and evaluation mode.
+   - Inspect six required input files.
+   - Browse and override input files manually.
+
+2. **Data Preprocessing**
+   - Build ontology graph.
+   - Compute disease-specific ontology enrichment.
+   - Create TCGA tumor/control expression tables.
+   - Compute DE genes and co-expression network.
+
+3. **Priority Gene Ranking**
+   - Run single-disease ranking.
+   - Build and preview the integrated network.
+   - Run batch ranking for multiple diseases and alpha/beta pairs.
+   - View ranking output and OncoKB-based metrics.
+
+4. **Parameter Optimization**
+   - Run Optuna alpha/beta optimization for BioRank Lite.
+   - Compare PageRank, BRWR Lite, BioRank Lite baseline, and selected optimized BioRank Lite candidates.
+   - Support single-disease and sequential multi-disease optimization.
+
+Optuna defaults:
+
+```text
+n_trials = 200
+random_seed = 42
+alpha range = 0.0..1.0
+beta range = 0.0..1.0
+objectives = nDCG@100, Recall@100, Common@100
 ```
 
+Optimizer outputs are isolated under:
+
+```text
+output/<DISEASE>/optuna_biorank_compare/<YYYYMMDD_HHMMSS>/
+```
+
+The output folder includes:
+
+```text
+comparison_summary.tsv
+biorank_trial_history.tsv
+selected_biorank_candidates.tsv
+biorank_pareto_trials.tsv
+optimization_summary.json
+logs.txt
+rankings/
+```
+
+---
+
+## Repository Structure
+
+```text
+BioRank/
+  main.py                         # Main CustomTkinter GUI
+  main_qt_optimizer.py            # Standalone Qt optimizer entry point
+  BioRank/                        # Ranking pipeline, cores, metrics, optimizer
+  biorank_ui/                     # Main GUI state, config, views, service layer
+  biorank_qt/                     # Standalone Qt optimizer UI
+  data_preprocessing/             # Preprocessing modules
+  data_set/                       # Input datasets and references
+  output/                         # Generated outputs, ignored by git
+  tests/                          # Unit tests
+  docs/                           # Architecture, setup guide, workflow notes
+  requirements.txt
+```
+
+Important docs:
+
+- [docs/setup_and_run_biorank_v2.md](docs/setup_and_run_biorank_v2.md): detailed setup, run, and troubleshooting guide.
+- [docs/BioRank_pipeline_and_architecture.md](docs/BioRank_pipeline_and_architecture.md): current pipeline and architecture.
+- [docs/USER_WORKFLOW_AND_SPECIFICATION.md](docs/USER_WORKFLOW_AND_SPECIFICATION.md): UI workflow notes.
+- [docs/AGENT_RULES.md](docs/AGENT_RULES.md): maintainer rules for code changes.
+
+---
+
+## Requirements
+
+Use Python 3.10+ if possible. Python 3.9+ should work for most workflows.
+
+Install dependencies:
+
+```powershell
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+```
+
+For complete setup instructions on Windows, macOS, or Linux, read:
+
+```text
+docs/setup_and_run_biorank_v2.md
+```
+
+---
+
+## Required Data Layout
+
+The GUI auto-detects default ranking inputs under `data_set/`:
+
+The full dataset is large, so it is not uploaded directly to git. Download it from Google Drive:
+
+```text
+https://drive.google.com/drive/folders/1LU25AoEO8PNBLvk0TU5PAyL1kwb7B_mr?usp=sharing
+```
+
+After downloading or extracting the folder, rename the dataset folder to exactly:
+
+```text
+data_set
+```
+
+Place it at the repository root, next to `main.py`, so the final path is:
+
+```text
+BioRank/data_set/
+```
+
+```text
+data_set/ppi_network/HIPPIE.tsv
+data_set/co-expression_networks/TCGA-<DISEASE>*co_expression*.tsv
+data_set/seed_set/TCGA-<DISEASE>*_seed.txt
+data_set/seed_set/TCGA-<DISEASE>*_seed.tsv
+data_set/differentially_expressed_genes/TCGA-<DISEASE>*de_genes.tsv
+data_set/ontology_network/ontology_network.tsv
+data_set/disease_specific_ontologies/TCGA-<DISEASE>*disease_ontologies.txt
+data_set/mart_biotool.txt
+data_set/Onco_KB.csv
+```
+
+For `Dataset New`, BioRank v2 overrides seed and disease ontology with:
+
+```text
+data_set/seed_set/New/TCGA-<DISEASE>_seed.txt
+data_set/disease_specific_ontologies/TCGA-<DISEASE>_disease_ontologies_new_22_6.txt
+```
+
+Supported disease codes:
+
+```text
+BLCA, BRCA, COAD, LUAD, PRAD, STAD, THCA
+```
+
+The app does not split seed genes into train/test sets. Evaluation currently uses:
+
+```text
+data_set/Onco_KB.csv
+```
+
+---
+
+## Quick Start
+
+1. Create and activate a virtual environment.
+
+```powershell
+python -m venv .venv
+.\.venv\Scripts\Activate.ps1
+```
+
+2. Install dependencies.
+
+```powershell
+python -m pip install -r requirements.txt
+```
+
+3. Run the main GUI.
+
+```powershell
+python main.py
+```
+
+4. In the app:
+
+```text
+Input Data Configuration -> confirm inputs are Ready
+Priority Gene Ranking -> Build Network -> Run Algorithm
+Parameter Optimization -> Start Optuna Engine
+```
+
+---
+
+## Main Ranking Outputs
+
+Single-run ranking and integrated network outputs:
+
+```text
+output/<DISEASE>/<DISEASE>_integrated_network.tsv
+output/<DISEASE>/<DISEASE>_original_pagerank_ranking.tsv
+output/<DISEASE>/<DISEASE>_biorank_ranking.tsv
+output/<DISEASE>/<DISEASE>_biorank_lite_ranking.tsv
+output/<DISEASE>/<DISEASE>_brwr_ranking.tsv
+output/<DISEASE>/<DISEASE>_brwr_lite_ranking.tsv
+```
+
+Ranking TSV schema:
+
+```text
+Rank<TAB>GeneNames<TAB>GeneSymbol<TAB>Score<TAB>OncoKBHit
+```
+
+Batch ranking outputs:
+
+```text
+output/<DISEASE>/batch_ranking/<YYYYMMDD_HHMMSS>/
+```
+
+---
+
+## Reproduce an Experiment
+
+To reproduce a ranking run, record:
+
+- Repo version or Git commit.
+- Disease code.
+- Dataset profile: `Dataset` or `Dataset New`.
+- Evaluation mode: `OncoKB`.
+- Algorithm.
+- Alpha and beta.
+- The six input paths shown in the GUI.
+
+Then restore the same `data_set/` files, run `python main.py`, select the same parameters, build the network, and run the algorithm.
+
+To reproduce Optuna optimization, additionally record:
+
+- Number of trials.
+- Random seed.
+- Alpha and beta ranges.
+- Candidate selection settings if changed.
+
+For the same input files, search space, random seed, and trial count, Optuna uses the same suggestion sequence.
+
+---
+
+## Tests
+
+Focused checks:
+
+```powershell
+python -m unittest tests.test_ui_config_wiring
+python -m unittest tests.test_service_ranking_output
+```
+
+Full test suite:
+
+```powershell
+python -m unittest discover tests
+```
+
+---
+
+## Notes for Maintainers
+
+- Keep runtime paths relative to the repository root.
+- Do not hard-code user-specific absolute paths.
+- Keep generated outputs under `output/`.
+- Keep large or generated runtime files out of source control.
+- Follow [docs/AGENT_RULES.md](docs/AGENT_RULES.md) before changing code or docs.

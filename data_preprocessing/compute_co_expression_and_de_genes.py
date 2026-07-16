@@ -37,14 +37,19 @@ def create_de_genes(
     control_file_path,
     output_file_path,
     threshold=2.5,
-    identifier_file_path=None
+    identifier_file_path=None,
+    control_is_gtex=None,
 ):
     if identifier_file_path is None:
         raise ValueError("Identifier file path must be provided.")
 
+    if control_is_gtex is None:
+        with open(control_file_path, "r") as control_file:
+            control_is_gtex = control_file.readline().strip().startswith("#1.2")
+
     identifiers = __load_identifier__(identifier_file_path)
     tumor_df = __load_df__(tumor_file_path, identifiers, is_gtex=False)
-    control_df = __load_df__(control_file_path, identifiers, is_gtex=True)
+    control_df = __load_df__(control_file_path, identifiers, is_gtex=control_is_gtex)
 
     intersection = list(set(tumor_df) & set(control_df))
     table = []
@@ -57,7 +62,8 @@ def create_de_genes(
         std = np.std(control_vals)
 
         if std != 0.0:
-            log_z_scores = np.log(np.abs((tumor_vals - mean) / std))
+            with np.errstate(divide="ignore", invalid="ignore"):
+                log_z_scores = np.log(np.abs((tumor_vals - mean) / std))
             flag = np.where(log_z_scores > threshold, 1, 0)
             count = np.sum(flag)
             if count > 0:
@@ -65,7 +71,7 @@ def create_de_genes(
                 table.append([gene, count])
 
     table.sort(key=lambda x: x[1], reverse=True)
-    mean_count = np.mean(sum_vector)
+    mean_count = np.mean(sum_vector) if sum_vector else 0.0
     filtered_table = [record for record in table if record[1] > mean_count]
 
     with open(output_file_path, "w", newline="") as f:
@@ -96,7 +102,7 @@ def get_top_correlations(
     gene_list = list(df.keys())
 
     co_expr_list = []
-    print("🔍 Computing Pearson correlation...")
+    print("Computing Pearson correlation...")
 
     for i in range(len(gene_list)):
         for j in range(i + 1, len(gene_list)):
@@ -110,4 +116,4 @@ def get_top_correlations(
         writer = csv.writer(f, delimiter="\t")
         writer.writerow(["u", "v", "score"])
         writer.writerows(co_expr_list)
-    print(f"✅ Co-expression network saved: {output_file_path}")
+    print(f"Co-expression network saved: {output_file_path}")

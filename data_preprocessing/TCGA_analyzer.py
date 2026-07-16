@@ -26,6 +26,8 @@ class TCGAAnalyzer:
                     continue  # Bỏ header
 
                 file_id, file_name, project_id = row[0], row[1], row[4]
+                if file_id not in self.manifest_sample_ids:
+                    continue
                 sample_id = row[6]
                 type_code = sample_id.split("-")[-1][:2]  # Lấy mã phân biệt tumor/control
 
@@ -48,7 +50,7 @@ class TCGAAnalyzer:
             patient_set.add(case_id)
 
             try:
-                with gzip.open(file_path, mode='rt') as f:  # ✅ sửa tại đây: đọc file ở dạng văn bản
+                with gzip.open(file_path, mode="rt") as f:
                     reader = csv.reader(f, delimiter="\t")
                     for row in reader:
                         if not row or len(row) < 2:
@@ -57,7 +59,7 @@ class TCGAAnalyzer:
                         gene_set.add(ensembl_id)
                         map__patient__ensembl_id__expression[case_id][ensembl_id] = rna
             except Exception as e:
-                print(f"❌ Error reading {file_path}: {e}")
+                print(f"Error reading {file_path}: {e}")
 
         return patient_set, gene_set, map__patient__ensembl_id__expression
 
@@ -75,16 +77,23 @@ class TCGAAnalyzer:
                 writer.writerow(row)
 
     def create_tumor_control_table(self):
+        os.makedirs(self.output_dir_path, exist_ok=True)
         self.__load_manifest_files__()
         self.__create_mapping_tumor_sane_samples__()
+        output_files = []
 
         for project_id, case_control_dict in self.TCGA_map__project_id___dictionary.items():
-            print(f"🧬 Processing project: {project_id}")
+            print(f"Processing project: {project_id}")
 
             tumor_set, tumor_genes, tumor_expr = self.__get_map__patient__ensembl_id__expression(case_control_dict["T"])
             control_set, control_genes, control_expr = self.__get_map__patient__ensembl_id__expression(case_control_dict["C"])
 
             self.__write_table__(tumor_set, tumor_genes, tumor_expr, project_id, "tumor")
             self.__write_table__(control_set, control_genes, control_expr, project_id, "control")
+            output_files.extend([
+                os.path.join(self.output_dir_path, f"{project_id}__tumor.tsv"),
+                os.path.join(self.output_dir_path, f"{project_id}__control.tsv"),
+            ])
 
-        print(f"✅ All tumor/control tables written to: {self.output_dir_path}")
+        print(f"All tumor/control tables written to: {self.output_dir_path}")
+        return output_files

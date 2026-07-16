@@ -30,10 +30,10 @@ class DiseaseOntologies:
         with open(file_path, "r") as f:
             return {row[0] for row in csv.reader(f, delimiter="\t")}
 
-    def run(self):
+    def run(self, overwrite=False):
         # Skip if file already exists
-        if os.path.exists(self.output_file_path):
-            print(f"⚠️ File already exists: {self.output_file_path} — skipping.")
+        if os.path.exists(self.output_file_path) and not overwrite:
+            print(f"File already exists: {self.output_file_path}; skipping.")
             return
 
         self.__load_ontology_graph__()
@@ -47,6 +47,8 @@ class DiseaseOntologies:
 
             enrichment = EnrichmentAnalysis(gene2term, term2gene, disease_genes)
             raw_pvals = enrichment.get_enirchment_analysis()
+            if not raw_pvals:
+                continue
 
             fdr_passed = compute_p_value_fdr_correction(raw_pvals, p_value_threshold=self.p_value_threshold)
 
@@ -57,4 +59,4 @@ class DiseaseOntologies:
             writer = csv.writer(f, delimiter="\t")
             writer.writerows(disease_ontologies)
 
-        print(f"✅ Disease-specific ontology saved: {self.output_file_path}")
+        print(f"Disease-specific ontology saved: {self.output_file_path}")

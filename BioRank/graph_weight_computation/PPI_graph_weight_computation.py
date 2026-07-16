@@ -1,12 +1,17 @@
 import networkx as nx
 class ComputePPIGraphWeight():
 	
-	def __init__(self, G, disease_ontology = None, map__gene__ontologies = None, c = 1):
+	def __init__(self, G, disease_ontology = None, map__gene__ontologies = None, c = 1, cancellation_event = None):
 
 		self.constant = c
 		self.PPI = G
 		self.disease_ontology = disease_ontology
 		self.map__gene__ontologies = map__gene__ontologies
+		self.cancellation_event = cancellation_event
+
+	def _check_cancelled(self):
+		if self.cancellation_event is not None and self.cancellation_event.is_set():
+			raise RuntimeError("Operation cancelled.")
 
 	def _get_edge_relevance(self, source, target, database_source, current_disease_ontology):
 
@@ -24,7 +29,9 @@ class ComputePPIGraphWeight():
 
 		assert self.disease_ontology != None and self.map__gene__ontologies != None, "Not enough input parameter for computing PPI biological weight"
 		weighted_PPI = nx.DiGraph()
-		for node in self.PPI:
+		for index, node in enumerate(self.PPI):
+			if index % 1000 == 0:
+				self._check_cancelled()
 			neighbors = self.PPI[node]
 			for neighbor in neighbors:
 				weight = self.constant
@@ -35,7 +42,6 @@ class ComputePPIGraphWeight():
 		assert len(weighted_PPI.edges()) == len(self.PPI.edges()) and len(weighted_PPI.nodes()) == len(self.PPI.nodes()), "nodes or edges not overlapping between G and weighted G"
 
 		return weighted_PPI
-
 
 
 

@@ -1,8 +1,9 @@
 import csv
+import itertools
 import time
 
-from BioRank.core.BioRank import BioRank
-from BioRank.core.core import RandomWalkWithRestartCore
+from BioRank.core.BioRank import BioRank, BioRankLite
+from BioRank.core.core import RandomWalkWithRestartCore, RandomWalkWithRestartOriginal
 from BioRank.core.page_rank_ori import PageRankOri
 from BioRank.graph_weight_computation.PPI_graph_weight_computation import ComputePPIGraphWeight
 from BioRank.loader.loader import Loader
@@ -24,6 +25,8 @@ from BioRank.personalization_vector_creation.topological_personalization_vector_
 
 
 ALGORITHM_BIORANK = "biorank"
+ALGORITHM_BIORANK_LITE = "biorank_lite"
+ALGORITHM_BRWR = "brwr"
 ALGORITHM_ORIGINAL_PAGERANK = "pagerank"
 ALGORITHM_RANDOM_WALK = "random_walk"
 
@@ -53,6 +56,8 @@ class BioRankCancerGeneRanking:
         output_file_path=None,
         algorithm=None,
         auto_run=True,
+        cancellation_event=None,
+        progress_callback=None,
     ):
         self.seed_file_path = seed_file_path
         self.ppi_file_path = ppi_file_path
@@ -70,6 +75,8 @@ class BioRankCancerGeneRanking:
         self.network_weight_flag = network_weight_flag
         self.output_file_path = output_file_path
         self.algorithm = algorithm or ALGORITHM_RANDOM_WALK
+        self.cancellation_event = cancellation_event
+        self.progress_callback = progress_callback
 
         self.file_loader_step = None
         self.compute_ppi_weight = None
@@ -90,6 +97,14 @@ class BioRankCancerGeneRanking:
         if auto_run:
             self.run()
 
+    def _check_cancelled(self):
+        if self.cancellation_event is not None and self.cancellation_event.is_set():
+            raise RuntimeError("Operation cancelled.")
+
+    def _emit_progress(self, status, **payload):
+        if self.progress_callback is not None:
+            self.progress_callback({"status": status, **payload})
+
     def run(self):
         self._pipeline_start_time = time.perf_counter()
         self.prepare_network()
@@ -101,7 +116,9 @@ class BioRankCancerGeneRanking:
         self._pipeline_start_time = self._pipeline_start_time or time.perf_counter()
 
         # Pipeline phase 1: load all biological inputs from user-selected files.
+        self._check_cancelled()
         t0 = time.perf_counter()
+        self._emit_progress("Loading networks...", phase="load_inputs")
         print("Loading networks...")
         self.file_loader_step = Loader(
             self.ppi_file_path,
@@ -110,6 +127,7 @@ class BioRankCancerGeneRanking:
             secondary_seed_file_path=self.secondary_seed_file_path,
             disease_ontology_file_path=self.disease_ontology_file_path,
             map_gene_ontologies_file_path=self.map__gene__ontologies_file_path,
+            cancellation_event=self.cancellation_event,
         )
         (
             self.PPI,
@@ -121,22 +139,37 @@ class BioRankCancerGeneRanking:
         ) = self.file_loader_step.run()
         print("Loading time:", time.perf_counter() - t0)
         print()
+        self._emit_progress(
+            f"Loaded inputs: PPI nodes={self.PPI.number_of_nodes()}, co-expression nodes={self.CO_expression.number_of_nodes()}",
+            phase="load_inputs",
+        )
+        self._check_cancelled()
 
         # Pipeline phase 2: enrich PPI edges using disease ontology evidence.
         if self.network_weight_flag:
+            self._check_cancelled()
             t0 = time.perf_counter()
+            self._emit_progress("Weighting PPI edges with disease ontology evidence...", phase="weight_ppi")
             print("Weighting networks...")
             self.compute_ppi_weight = ComputePPIGraphWeight(
                 self.PPI,
                 map__gene__ontologies=self.map__gene__ontologies,
                 disease_ontology=self.disease_ontology,
+                cancellation_event=self.cancellation_event,
             )
             self.PPI = self.compute_ppi_weight.compute_weight_on_graph()
             print("Weighting networks computation time:", time.perf_counter() - t0)
             print()
+            self._emit_progress("PPI edge weighting completed.", phase="weight_ppi")
+            self._check_cancelled()
 
         # Pipeline phase 3: aggregate PPI and co-expression into the graph used by ranking.
+        self._check_cancelled()
         t0 = time.perf_counter()
+        self._emit_progress(
+            f"Aggregating PPI and co-expression with beta={self.beta}...",
+            phase="aggregate_network",
+        )
         print("Computing aggregation with policy:", self.matrix_aggregation_policy, "...")
         self.G, self.V = self.compute_matrix_aggregation(
             self.PPI,
@@ -146,6 +179,11 @@ class BioRankCancerGeneRanking:
         print(f"Graph has {self.G.number_of_nodes()} nodes and {self.G.number_of_edges()} edges")
         print("Time for computing aggregation matrix:", time.perf_counter() - t0)
         print()
+        self._emit_progress(
+            f"Integrated graph ready: nodes={self.G.number_of_nodes()}, edges={self.G.number_of_edges()}",
+            phase="aggregate_network",
+        )
+        self._check_cancelled()
 
         return self.G, self.V
 
@@ -154,12 +192,16 @@ class BioRankCancerGeneRanking:
         if self.G is None or self.V is None:
             self.prepare_network()
 
+        self._check_cancelled()
         # Original PageRank uses a uniform prior, so it does not need the
         # biological/topological personalization-vector stages.
         if self.algorithm == ALGORITHM_ORIGINAL_PAGERANK:
             t0 = time.perf_counter()
+            self._emit_progress("Executing original PageRank core...", phase="ranking_core")
             print("Executing original PageRank...")
-            self.ranked_list = list(PageRankOri(self.G).run())
+            self.ranked_list = list(
+                PageRankOri(self.G, cancellation_event=self.cancellation_event).run()
+            )
             print("Time for executing original PageRank:", time.perf_counter() - t0)
 
             if self.output_file_path is not None:
@@ -173,11 +215,16 @@ class BioRankCancerGeneRanking:
 
         # Pipeline phase 4: build the personalization vector from topology and biology.
         t0 = time.perf_counter()
+        self._emit_progress(
+            "Computing personalization vectors with biological and topological evidence...",
+            phase="personalization",
+        )
         print(
             "Computing personalization vectors with policies:",
             ", ".join(self.personalization_vector_creation_policies),
             "...",
         )
+        self._check_cancelled()
         personalization_vectors = self.compute_personalization_vectors(
             seed_set=self.seed_set,
             V=self.V,
@@ -190,8 +237,11 @@ class BioRankCancerGeneRanking:
         )
         print("Time for computing personalization vectors:", time.perf_counter() - t0)
         print()
+        self._emit_progress("Personalization vectors completed.", phase="personalization")
+        self._check_cancelled()
 
         t0 = time.perf_counter()
+        self._emit_progress(f"Aggregating personalization vectors with alpha={self.alpha}...", phase="personalization")
         print(
             "Aggregating personalization vectors with policy:",
             self.personalization_vector_aggregation_policy,
@@ -205,11 +255,23 @@ class BioRankCancerGeneRanking:
         p_0 = self.personalization_vector_aggregation_step.run(
             chosen_policy=self.personalization_vector_aggregation_policy
         )
+        self._check_cancelled()
 
         # Pipeline phase 5: run the selected graph-ranking algorithm.
         t0 = time.perf_counter()
+        self._emit_progress(f"Executing ranking algorithm: {self.algorithm}", phase="ranking_core")
         print("Executing ranking algorithm...")
+        if self.algorithm in {ALGORITHM_RANDOM_WALK, ALGORITHM_BRWR}:
+            self._emit_progress(
+                "Preparing BRWR transition matrix...",
+                phase="ranking_core",
+            )
         core = self._create_ranking_core(p_0)
+        if self.algorithm in {ALGORITHM_RANDOM_WALK, ALGORITHM_BRWR}:
+            self._emit_progress(
+                "Running BRWR iterations until convergence...",
+                phase="ranking_core",
+            )
         self.ranked_list = list(core.run())
         print("Time for executing ranking algorithm:", time.perf_counter() - t0)
 
@@ -224,8 +286,12 @@ class BioRankCancerGeneRanking:
 
     def _create_ranking_core(self, personalization_vector):
         if self.algorithm == ALGORITHM_BIORANK:
-            return BioRank(personalization_vector, self.G)
-        return RandomWalkWithRestartCore(personalization_vector, self.G)
+            return BioRank(personalization_vector, self.G, cancellation_event=self.cancellation_event)
+        if self.algorithm == ALGORITHM_BIORANK_LITE:
+            return BioRankLite(personalization_vector, self.G, cancellation_event=self.cancellation_event)
+        if self.algorithm == ALGORITHM_BRWR:
+            return RandomWalkWithRestartOriginal(personalization_vector, self.G, cancellation_event=self.cancellation_event)
+        return RandomWalkWithRestartCore(personalization_vector, self.G, cancellation_event=self.cancellation_event)
 
     def compute_personalization_vectors(
         self,
@@ -276,6 +342,7 @@ class BioRankCancerGeneRanking:
                 PPI_network,
                 CO_expression_network,
                 self.beta,
+                cancellation_event=self.cancellation_event,
             )
             return matrix_creation_step.run(chosen_policy="PPI_network")
 
@@ -296,16 +363,16 @@ class BioRankCancerGeneRanking:
         }
 
     def iter_network_nodes(self, limit=None):
-        nodes = sorted(self.G.nodes()) if self.G is not None else []
+        nodes = self.G.nodes() if self.G is not None else []
         if limit is not None:
-            nodes = nodes[:limit]
-        return nodes
+            nodes = itertools.islice(nodes, limit)
+        return list(nodes)
 
     def iter_network_edges(self, limit=None):
         if self.G is None:
             return []
 
-        edges = sorted(
+        edges = (
             (
                 source,
                 target,
@@ -314,17 +381,20 @@ class BioRankCancerGeneRanking:
             for source, target, data in self.G.edges(data=True)
         )
         if limit is not None:
-            edges = edges[:limit]
-        return edges
+            edges = itertools.islice(edges, limit)
+        return list(edges)
 
     def save_network(self, file_path):
+        self._check_cancelled()
         with open(file_path, "w", newline="", encoding="utf-8") as fp:
             csv_writer = csv.writer(fp, delimiter="\t")
             csv_writer.writerow(["Source", "Target", "Weight"])
             for source, target, weight in self.iter_network_edges():
+                self._check_cancelled()
                 csv_writer.writerow([source, target, weight])
 
     def save_ranked_list(self, file_path):
+        self._check_cancelled()
         ranked_list = [[item[0], item[1]] for item in self.ranked_list]
         with open(file_path, "w", newline="", encoding="utf-8") as fp:
             csv_writer = csv.writer(fp, delimiter="\t")

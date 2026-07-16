@@ -41,7 +41,7 @@ class OntologyGraph:
             reader = csv.reader(f, delimiter="\t")
             for row in reader:
                 if len(row) < 9:
-                    print(f"⚠️ Skipped invalid GO row: {row}")
+                    print(f"Skipped invalid GO row: {row}")
                     continue
                 protein_id, ontology_id, validation, bp = row[1], row[4], row[6], row[8]
                 if bp == "P" and validation != "IEA":
@@ -53,7 +53,7 @@ class OntologyGraph:
             reader = csv.reader(f, delimiter="\t")
             for row in reader:
                 if len(row) < 5:
-                    print(f"⚠️ Skipped invalid Reactome row: {row}")
+                    print(f"Skipped invalid Reactome row: {row}")
                     continue
                 ensembl_id, ontology_id, validation = row[0], row[1], row[4]
                 if "R-HSA" in ontology_id and "ENSG" in ensembl_id and validation != "IEA":
@@ -79,16 +79,16 @@ class OntologyGraph:
                     writer.writerow([gene_id, term_id, db])
 
     def run(self):
-        print("🔍 Loading Uniprot to Ensembl mapping...")
+        print("Loading Uniprot to Ensembl mapping...")
         self.__load_uniprot_mapping__()
-        print("🔍 Loading KEGG to Uniprot mapping...")
+        print("Loading KEGG to Uniprot mapping...")
         self.__load_KEGG_to_uniprot_mapping__()
-        print("🔍 Loading GO annotations...")
+        print("Loading GO annotations...")
         self.__load_go__()
-        print("🔍 Loading KEGG annotations...")
+        print("Loading KEGG annotations...")
         self.__load_KEGG__()
-        print("🔍 Loading Reactome annotations...")
+        print("Loading Reactome annotations...")
         self.__load_reactome__()
-        print("💾 Saving ontology network...")
+        print("Saving ontology network...")
         self.__save_final_ontology__()
-        print(f"✅ Ontology network saved to {self.output_ontology_network_path}")
+        print(f"Ontology network saved to {self.output_ontology_network_path}")
