@@ -6,19 +6,37 @@ from tkinter import messagebox, ttk
 
 from biorank_ui.config import (
     COLORS,
+    DATASET_PROFILE_DEFAULT,
+    EVALUATION_MODE_ONCOKB,
     GENE_MAPPING_PATH,
     METRIC_TOP_N,
-    ONCOKB_PATH,
     RANKING_REVIEW_LIMIT,
+    get_evaluation_mode_label,
+    get_validation_reference_path,
 )
 
 
-def show_ranking_result_review(root, title, disease, output_paths):
+def show_ranking_result_review(
+    root,
+    title,
+    disease,
+    output_paths,
+    validation_reference_path=None,
+    validation_label=None,
+    validation_gene_column="Gene",
+):
+    validation_reference_path = validation_reference_path or get_validation_reference_path(
+        disease,
+        DATASET_PROFILE_DEFAULT,
+        EVALUATION_MODE_ONCOKB,
+    )
+    validation_label = validation_label or get_evaluation_mode_label(EVALUATION_MODE_ONCOKB)
+    validation_gene_column = validation_gene_column or "Gene"
     try:
         gene_mapping = _load_gene_mapping()
-        oncokb_genes = _load_oncokb_genes()
-        results = _load_ranked_results(output_paths["ranking"], gene_mapping, oncokb_genes)
-        metrics = _calculate_ranking_metrics(results, oncokb_genes)
+        validation_genes = _load_validation_genes(validation_reference_path, validation_gene_column)
+        results = _load_ranked_results(output_paths["ranking"], gene_mapping, validation_genes)
+        metrics = _calculate_ranking_metrics(results, validation_genes)
     except Exception as exc:
         messagebox.showerror("Result preview error", str(exc), parent=root)
         return
@@ -65,7 +83,7 @@ def show_ranking_result_review(root, title, disease, output_paths):
         metrics_frame.columnconfigure(column, weight=1)
 
     metric_cards = [
-        (f"Recall@{metrics['top_n']}", f"{metrics['recall']:.4f}", "OncoKB coverage in top results"),
+        (f"Recall@{metrics['top_n']}", f"{metrics['recall']:.4f}", f"{validation_label} coverage in top results"),
         (f"nDCG@{metrics['top_n']}", f"{metrics['ndcg']:.4f}", "Position-aware hit quality"),
         ("Common genes", str(metrics["common_count"]), f"Top {metrics['top_n']} overlaps"),
         ("All hits", str(metrics["hit_count_all"]), "Across the full ranking"),
@@ -85,7 +103,7 @@ def show_ranking_result_review(root, title, disease, output_paths):
     ttk.Label(controls, text="Search gene").grid(row=0, column=0, sticky="w", padx=(0, 8))
     search_entry = ttk.Entry(controls, textvariable=search_var)
     search_entry.grid(row=0, column=1, sticky="ew", padx=(0, 12))
-    ttk.Checkbutton(controls, text="OncoKB hits only", variable=hits_only_var).grid(
+    ttk.Checkbutton(controls, text="Validation hits only", variable=hits_only_var).grid(
         row=0,
         column=2,
         sticky="w",
@@ -119,7 +137,7 @@ def show_ranking_result_review(root, title, disease, output_paths):
     table.heading("ensembl", text="Ensembl ID")
     table.heading("gene", text="Gene Symbol")
     table.heading("score", text="Score")
-    table.heading("oncokb", text="OncoKB")
+    table.heading("oncokb", text="Validation")
     table.column("rank", width=64, anchor="e", stretch=False)
     table.column("ensembl", width=190, anchor="w")
     table.column("gene", width=150, anchor="w")
@@ -138,7 +156,7 @@ def show_ranking_result_review(root, title, disease, output_paths):
     actions.columnconfigure(0, weight=1)
     ttk.Label(
         actions,
-        text=f"Reference: {ONCOKB_PATH} | Mapping: {GENE_MAPPING_PATH}",
+        text=f"Reference: {validation_reference_path} | Mapping: {GENE_MAPPING_PATH}",
         style="Hint.TLabel",
     ).grid(row=0, column=0, sticky="w")
     ttk.Button(actions, text="Close", command=review.destroy).grid(row=0, column=1, sticky="e")
@@ -190,7 +208,7 @@ def show_ranking_result_review(root, title, disease, output_paths):
 
         status_var.set(
             f"Showing {shown} of {matched_total} matched rows. "
-            f"Green rows are genes found in OncoKB."
+            f"Green rows are genes found in {validation_label}."
         )
 
     search_var.trace_add("write", refresh_table)
@@ -215,15 +233,15 @@ def _load_gene_mapping():
     return mapping
 
 
-def _load_oncokb_genes():
+def _load_validation_genes(validation_path, gene_column):
     genes = set()
-    if not os.path.exists(ONCOKB_PATH):
+    if not os.path.exists(validation_path):
         return genes
 
-    with open(ONCOKB_PATH, newline="", encoding="utf-8-sig") as fp:
+    with open(validation_path, newline="", encoding="utf-8-sig") as fp:
         reader = csv.DictReader(fp)
         for row in reader:
-            gene = _normalize_gene_symbol(row.get("Gene", ""))
+            gene = _normalize_gene_symbol(row.get(gene_column, ""))
             if gene:
                 genes.add(gene)
     return genes

@@ -27,8 +27,8 @@ def build_preprocessing_dialog_config(step_index, disease, file_paths, data_dir=
     data_dir = os.path.abspath(data_dir)
     configs = {
         1: {
-            "title": "Step 1: Compute Ontology Graph",
-            "description": "Select five annotation/mapping inputs and the ontology graph output.",
+            "title": "Step 1: Build Gene-Ontology Annotation Network",
+            "description": "Select the GO, KEGG, Reactome and identifier-mapping inputs, then choose the annotation network output.",
             "fields": [
                 _field("go_file_path", "GO annotation (.gaf)", "input_file", filetypes=[("GO annotation", "*.gaf"), ("All files", "*")]),
                 _field("kegg_file_path", "KEGG annotation", "input_file"),
@@ -44,11 +44,11 @@ def build_preprocessing_dialog_config(step_index, disease, file_paths, data_dir=
             ],
         },
         2: {
-            "title": f"Step 2: Disease-Specific Ontologies ({disease})",
-            "description": "Review the detected ontology and seed files, then choose the enrichment output.",
+            "title": f"Step 2: Enrich Disease-Specific Ontology Terms ({disease})",
+            "description": "Review the detected annotation network and seed set, then choose the enrichment output.",
             "fields": [
                 _field("ontology_file_path", "Ontology graph", "input_file", file_paths.get("ontology_map", "")),
-                _field("seed_file_path", f"Seed genes ({disease})", "input_file", file_paths.get("seed", "")),
+                _field("seed_file_path", f"Cancer gene seed set ({disease})", "input_file", file_paths.get("seed", "")),
                 _field(
                     "output_file_path",
                     "Disease ontology output",
@@ -59,8 +59,8 @@ def build_preprocessing_dialog_config(step_index, disease, file_paths, data_dir=
             ],
         },
         3: {
-            "title": "Step 3: Create Tumor-Control Tables",
-            "description": "Select GDC metadata, the downloaded RNA-seq folder, and an output folder.",
+            "title": "Step 3: Prepare Tumor and Normal Expression Tables",
+            "description": "Select GDC metadata, the downloaded RNA-seq directory and an output directory.",
             "fields": [
                 _field(
                     "sample_sheet_file_path",
@@ -79,11 +79,11 @@ def build_preprocessing_dialog_config(step_index, disease, file_paths, data_dir=
             ],
         },
         4: {
-            "title": f"Step 4: DE Genes and Co-expression ({disease})",
-            "description": "Select tumor/control matrices and identifier list, then review both output files.",
+            "title": f"Step 4: Derive DE Genes and Co-expression Network ({disease})",
+            "description": "Select tumor and normal expression tables plus the PPI identifier list, then review both output files.",
             "fields": [
                 _field("tumor_file_path", "Tumor expression table", "input_file"),
-                _field("control_file_path", "Control table (TCGA or GTEx GCT)", "input_file"),
+                _field("control_file_path", "Normal/control table (TCGA or GTEx GCT)", "input_file"),
                 _field(
                     "identifier_file_path",
                     "Identifier list",

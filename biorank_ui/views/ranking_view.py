@@ -44,7 +44,7 @@ class RankingView(ctk.CTkFrame):
         self.left_panel = ctk.CTkFrame(self.run_tab, fg_color=CARD_BG, border_color=BORDER, border_width=1, corner_radius=8)
         self.left_panel.grid(row=0, column=0, padx=(10, 5), pady=10, sticky="nsew")
         
-        self.lp_title = ctk.CTkLabel(self.left_panel, text="Hyperparameter Tuning & Configurations", font=(FONT_FAMILY_HEADER, 18), text_color=TEXT_MAIN)
+        self.lp_title = ctk.CTkLabel(self.left_panel, text="Ranking Configuration", font=(FONT_FAMILY_HEADER, 18), text_color=TEXT_MAIN)
         self.lp_title.pack(anchor="w", padx=24, pady=(24, 16))
 
         self.run_mode_tabs = ctk.CTkTabview(self.left_panel, fg_color="transparent")
@@ -53,7 +53,7 @@ class RankingView(ctk.CTkFrame):
         self.batch_run_tab = self.run_mode_tabs.add("Batch Queue")
         
         # Algorithm selector block
-        self.algo_lbl = ctk.CTkLabel(self.single_run_tab, text="Prioritization Engine Model:", font=(FONT_FAMILY_HEADER, 14), text_color=TEXT_MAIN)
+        self.algo_lbl = ctk.CTkLabel(self.single_run_tab, text="Ranking Algorithm:", font=(FONT_FAMILY_HEADER, 14), text_color=TEXT_MAIN)
         self.algo_lbl.pack(anchor="w", padx=10, pady=(10, 4))
         
         self.algo_dropdown = ctk.CTkOptionMenu(self.single_run_tab, values=ALGORITHMS, fg_color=PRIMARY, button_color=PRIMARY,
@@ -67,7 +67,7 @@ class RankingView(ctk.CTkFrame):
         
         self.alpha_header_frame = ctk.CTkFrame(self.alpha_card, fg_color="transparent")
         self.alpha_header_frame.pack(fill="x", padx=14, pady=(14, 2))
-        self.alpha_title = ctk.CTkLabel(self.alpha_header_frame, text="Alpha (α) Vector Factor", font=(FONT_FAMILY_HEADER, 14), text_color=TEXT_MAIN)
+        self.alpha_title = ctk.CTkLabel(self.alpha_header_frame, text="Alpha: Personalization Balance", font=(FONT_FAMILY_HEADER, 14), text_color=TEXT_MAIN)
         self.alpha_title.pack(side="left")
         
         self.alpha_entry = ctk.CTkEntry(self.alpha_header_frame, width=60, height=26, font=(FONT_FAMILY_HEADER, 13, "bold"), text_color=PRIMARY, fg_color=CARD_BG, border_color=BORDER, justify="center")
@@ -80,7 +80,7 @@ class RankingView(ctk.CTkFrame):
         self.alpha_slider.pack(fill="x", padx=14, pady=8)
         self.alpha_slider.set(state.alpha)
         
-        self.alpha_desc = ctk.CTkLabel(self.alpha_card, text="Biological annotation prioritization weight versus seed topological graph structures.", font=(FONT_FAMILY_BODY, 12), text_color=TEXT_MUTED, justify="left", wraplength=400)
+        self.alpha_desc = ctk.CTkLabel(self.alpha_card, text="Balances ontology-based personalization (alpha) against DE/topology personalization (1 - alpha).", font=(FONT_FAMILY_BODY, 12), text_color=TEXT_MUTED, justify="left", wraplength=400)
         self.alpha_desc.pack(fill="x", padx=14, pady=(0, 14), anchor="w")
         
         # Beta parameter card block
@@ -89,7 +89,7 @@ class RankingView(ctk.CTkFrame):
         
         self.beta_header_frame = ctk.CTkFrame(self.beta_card, fg_color="transparent")
         self.beta_header_frame.pack(fill="x", padx=14, pady=(14, 2))
-        self.beta_title = ctk.CTkLabel(self.beta_header_frame, text="Beta (β) Integration Combiner", font=(FONT_FAMILY_HEADER, 14), text_color=TEXT_MAIN)
+        self.beta_title = ctk.CTkLabel(self.beta_header_frame, text="Beta: Network Evidence Balance", font=(FONT_FAMILY_HEADER, 14), text_color=TEXT_MAIN)
         self.beta_title.pack(side="left")
         
         self.beta_entry = ctk.CTkEntry(self.beta_header_frame, width=60, height=26, font=(FONT_FAMILY_HEADER, 13, "bold"), text_color=PRIMARY, fg_color=CARD_BG, border_color=BORDER, justify="center")
@@ -102,7 +102,7 @@ class RankingView(ctk.CTkFrame):
         self.beta_slider.pack(fill="x", padx=14, pady=8)
         self.beta_slider.set(state.beta)
         
-        self.beta_desc = ctk.CTkLabel(self.beta_card, text="Convex aggregates mixture weight of PPI network (β) versus Pearson co-expressions graph (1-β).", font=(FONT_FAMILY_BODY, 12), text_color=TEXT_MUTED, justify="left", wraplength=400)
+        self.beta_desc = ctk.CTkLabel(self.beta_card, text="Balances annotation-weighted PPI edges (beta) against co-expression edges (1 - beta).", font=(FONT_FAMILY_BODY, 12), text_color=TEXT_MUTED, justify="left", wraplength=400)
         self.beta_desc.pack(fill="x", padx=14, pady=(0, 14), anchor="w")
         
         self._build_batch_ranking_card()
@@ -111,27 +111,27 @@ class RankingView(ctk.CTkFrame):
         self.right_panel = ctk.CTkFrame(self.run_tab, fg_color=CARD_BG, border_color=BORDER, border_width=1, corner_radius=8)
         self.right_panel.grid(row=0, column=1, padx=(5, 10), pady=10, sticky="nsew")
         
-        self.rp_title = ctk.CTkLabel(self.right_panel, text="Prioritization Model Executions", font=(FONT_FAMILY_HEADER, 18), text_color=TEXT_MAIN)
+        self.rp_title = ctk.CTkLabel(self.right_panel, text="Ranking Execution", font=(FONT_FAMILY_HEADER, 18), text_color=TEXT_MAIN)
         self.rp_title.pack(anchor="w", padx=24, pady=(24, 16))
         
         # Status block
         self.summary_card = ctk.CTkFrame(self.right_panel, fg_color=APP_BG, border_color=BORDER, border_width=1, corner_radius=8)
         self.summary_card.pack(fill="x", padx=24, pady=10, ipady=12)
         
-        self.summary_title = ctk.CTkLabel(self.summary_card, text="Execution Integration Summary", font=(FONT_FAMILY_HEADER, 15), text_color=TEXT_MAIN)
+        self.summary_title = ctk.CTkLabel(self.summary_card, text="Run Summary", font=(FONT_FAMILY_HEADER, 15), text_color=TEXT_MAIN)
         self.summary_title.pack(anchor="w", padx=20, pady=(16, 6))
         
         self.nodes_lbl = ctk.CTkLabel(self.summary_card, text="Network status: Unaggregated", font=(FONT_FAMILY_BODY, 14), text_color=TEXT_MUTED)
         self.nodes_lbl.pack(anchor="w", padx=20, pady=2)
         
-        self.edges_lbl = ctk.CTkLabel(self.summary_card, text="Algorithm selection: BioRank Lite Model", font=(FONT_FAMILY_BODY, 14), text_color=TEXT_MUTED)
+        self.edges_lbl = ctk.CTkLabel(self.summary_card, text="Selected algorithm: BioRank Lite", font=(FONT_FAMILY_BODY, 14), text_color=TEXT_MUTED)
         self.edges_lbl.pack(anchor="w", padx=20, pady=(2, 16))
         
         # Console Log Panel
         self.console_card = ctk.CTkFrame(self.right_panel, fg_color="#0F172A", border_color="#1E293B", border_width=1, corner_radius=8)
         self.console_card.pack(fill="both", expand=True, padx=24, pady=10)
         
-        self.console_title = ctk.CTkLabel(self.console_card, text="System Log Console", font=(FONT_FAMILY_HEADER, 12, "bold"), text_color="#38BDF8")
+        self.console_title = ctk.CTkLabel(self.console_card, text="Execution Log", font=(FONT_FAMILY_HEADER, 12, "bold"), text_color="#38BDF8")
         self.console_title.pack(anchor="w", padx=12, pady=(8, 4))
         
         self.log_text = ctk.CTkTextbox(self.console_card, fg_color="#0F172A", text_color="#38BDF8", font=("Consolas", 12), border_width=0, corner_radius=0)
@@ -150,11 +150,11 @@ class RankingView(ctk.CTkFrame):
                                               fg_color=SOFT_BLUE, text_color=PRIMARY, hover_color=BORDER,
                                               height=46, corner_radius=6, command=self.preview_net_callback)
         
-        self.run_algo_btn = ctk.CTkButton(self.actions_frame, text="Run Prioritization Algorithm", font=(FONT_FAMILY_HEADER, 15, "bold"),
+        self.run_algo_btn = ctk.CTkButton(self.actions_frame, text="Run Gene Ranking", font=(FONT_FAMILY_HEADER, 15, "bold"),
                                            fg_color=STATUS_RUNNING, hover_color="#0D47A1", text_color="#FFFFFF",
                                            height=46, corner_radius=6, command=self.run_algo_callback)
                                            
-        self.rebuild_net_btn = ctk.CTkButton(self.actions_frame, text="Re-build Integrated Network", font=(FONT_FAMILY_HEADER, 13, "bold"),
+        self.rebuild_net_btn = ctk.CTkButton(self.actions_frame, text="Rebuild Integrated Network", font=(FONT_FAMILY_HEADER, 13, "bold"),
                                               fg_color=SOFT_BLUE, text_color=TEXT_MUTED, hover_color=BORDER,
                                               height=40, corner_radius=6, command=self.build_net_callback)
                                               
@@ -308,7 +308,7 @@ class RankingView(ctk.CTkFrame):
             self.state.set_algorithm(value)
         other_dropdown = self.batch_algo_dropdown if self.algo_dropdown.get() == value else self.algo_dropdown
         other_dropdown.set(value)
-        self.edges_lbl.configure(text=f"Algorithm selection: {value} Model")
+        self.edges_lbl.configure(text=f"Selected algorithm: {value}")
         
         if value == "Original PageRank":
             self.alpha_slider.configure(state="disabled")
@@ -492,7 +492,7 @@ class RankingView(ctk.CTkFrame):
         try:
             self.algo_dropdown.set(self.state.selected_algorithm)
             self.batch_algo_dropdown.set(self.state.selected_algorithm)
-            self.edges_lbl.configure(text=f"Algorithm selection: {self.state.selected_algorithm} Model")
+            self.edges_lbl.configure(text=f"Selected algorithm: {self.state.selected_algorithm}")
 
             if self.state.selected_algorithm == "Original PageRank":
                 self.alpha_slider.configure(state="disabled")

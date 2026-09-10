@@ -27,6 +27,12 @@ from biorank_ui.config import (
     get_optuna_biorank_compare_output_base,
     state_file_paths_to_backend,
 )
+from BioRank.optimization.ablation_config import (
+    ABLATION_MODE_FULL,
+    ablation_label,
+    ablation_slug,
+    required_input_keys,
+)
 from BioRank.metrics.ranking_metrics import (
     evaluate_ranking_against_oncokb,
     load_gene_mapping,
@@ -84,6 +90,7 @@ class BackendService:
             "disease": disease_code,
             "dataset_profile": self.state.dataset_profile,
             "evaluation_mode": self.state.evaluation_mode,
+            "validation_file_path": self._validation_reference_path(disease_code),
             "beta": beta,
             "input_paths": dict(input_paths),
             "network_path": output_paths["network"],
@@ -134,7 +141,7 @@ class BackendService:
         runner.execute_ranking()
         self._check_cancelled(cancel_event)
 
-        callback(0.85, "Writing ranking with gene mapping and computing OncoKB metrics...")
+        callback(0.85, "Writing ranking with gene mapping and computing validation metrics...")
         self._enrich_ranking_output(output_paths["ranking"], disease_code)
         self._load_ranking_into_state(output_paths["ranking"], disease_code)
         self.state.active_result_path = output_paths["ranking"]
@@ -189,6 +196,7 @@ class BackendService:
                     "disease": disease,
                     "dataset_profile": self.state.dataset_profile,
                     "evaluation_mode": self.state.evaluation_mode,
+                    "validation_file_path": self._validation_reference_path(disease),
                     "algorithm": algorithm,
                     "alpha": alpha,
                     "beta": beta,
@@ -206,19 +214,30 @@ class BackendService:
         self._write_batch_summary(summary_rows)
         callback(1.0, f"Batch ranking completed: {total_jobs} jobs.")
 
-    def run_optuna_tuning(self, disease_code, file_map, n_trials, seed, callback, cancel_event):
+    def run_optuna_tuning(
+        self,
+        disease_code,
+        file_map,
+        n_trials,
+        seed,
+        callback,
+        cancel_event,
+        pause_event=None,
+        ablation_mode=ABLATION_MODE_FULL,
+    ):
         from BioRank.optimization.biorank_alpha_beta_optimizer import (
             BioRankAlphaBetaOptimizer,
             OptimizationCancelled,
         )
 
-        input_paths = self._normalize_and_validate_input_paths(file_map)
+        input_paths = self._normalize_and_validate_input_paths(file_map, ablation_mode=ablation_mode)
         self._validate_reference_paths(disease_code)
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = get_optuna_biorank_compare_output_base(disease_code) / timestamp
+        output_dir = get_optuna_biorank_compare_output_base(disease_code) / ablation_slug(ablation_mode) / timestamp
         self.state.reset_optuna(max_trials=n_trials)
         start_time = time.perf_counter()
         live_baseline_rows = {}
+        current_ablation_label = ablation_label(ablation_mode)
 
         def progress_adapter(payload):
             self.state.optuna_elapsed_time = time.perf_counter() - start_time
@@ -240,17 +259,18 @@ class BackendService:
                 self.state.optuna_current_trial = int(trial_number) + 1
                 alpha = payload.get("alpha")
                 beta = payload.get("beta")
-                if alpha is not None and beta is not None:
-                    status = f"{status} | alpha={float(alpha):.4f}, beta={float(beta):.4f}"
+                parameter_text = self._parameter_status_text(alpha, beta)
+                if parameter_text:
+                    status = f"{status} | {parameter_text}"
                     self.state.optuna_status_text = status
 
             metrics = payload.get("metrics") or {}
-            if metrics and payload.get("alpha") is not None and payload.get("beta") is not None:
+            if metrics:
                 self.state.optuna_trials.append(
                     {
                         "trial_id": int(trial_number) + 1,
-                        "alpha": float(payload["alpha"]),
-                        "beta": float(payload["beta"]),
+                        "alpha": self._optional_float(payload.get("alpha")),
+                        "beta": self._optional_float(payload.get("beta")),
                         "recall_15": float(metrics.get("recall_at_15", 0.0)),
                         "ndcg_15": float(metrics.get("ndcg_at_15", 0.0)),
                         "common_15": int(float(metrics.get("common_genes_top_15", 0))),
@@ -261,11 +281,10 @@ class BackendService:
                     }
                 )
                 self.state.add_optuna_log(
-                    "Trial {}/{} complete: alpha={:.4f}, beta={:.4f}, nDCG@15={:.4f}, Recall@15={:.4f}, Common@15={}, nDCG@100={:.4f}, Recall@100={:.4f}, Common@100={}".format(
+                    "Trial {}/{} complete: {}, nDCG@15={:.4f}, Recall@15={:.4f}, Common@15={}, nDCG@100={:.4f}, Recall@100={:.4f}, Common@100={}".format(
                         self.state.optuna_current_trial,
                         int(n_trials),
-                        float(payload["alpha"]),
-                        float(payload["beta"]),
+                        self._parameter_status_text(payload.get("alpha"), payload.get("beta")),
                         float(metrics.get("ndcg_at_15", 0.0)),
                         float(metrics.get("recall_at_15", 0.0)),
                         int(float(metrics.get("common_genes_top_15", 0))),
@@ -302,7 +321,9 @@ class BackendService:
             candidate_selection_mode=DEFAULT_CANDIDATE_SELECTION_MODE,
             max_selected_candidates=DEFAULT_MAX_SELECTED_CANDIDATES,
             validation_mode=self.state.evaluation_mode,
+            ablation_mode=ablation_mode,
             cancellation_event=cancel_event,
+            pause_event=pause_event,
             progress_callback=progress_adapter,
         )
 
@@ -314,9 +335,9 @@ class BackendService:
         self._load_optimizer_result(result)
         self.state.optuna_elapsed_time = time.perf_counter() - start_time
         self.state.optuna_phase = "completed"
-        self.state.optuna_status_text = f"Optimization completed. Output: {result.output_dir}"
+        self.state.optuna_status_text = f"{current_ablation_label} completed. Output: {result.output_dir}"
         self.state.add_optuna_log(self.state.optuna_status_text)
-        callback(1.0, f"Optimization completed. Output: {result.output_dir}")
+        callback(1.0, f"{current_ablation_label} completed. Output: {result.output_dir}")
         return result
 
     def _update_live_optuna_comparison(self, baseline_rows):
@@ -331,8 +352,8 @@ class BackendService:
             rows.append(
                 (
                     f"BioRank trial #{trial['trial_id']}",
-                    self._fmt(trial.get("alpha")),
-                    self._fmt(trial.get("beta")),
+                    self._parameter_display(trial.get("alpha")),
+                    self._parameter_display(trial.get("beta")),
                     self._fmt(trial.get("ndcg_15")),
                     self._fmt(trial.get("recall_15")),
                     str(trial.get("common_15", 0)),
@@ -344,11 +365,12 @@ class BackendService:
         self.state.optuna_comparison = rows
 
     def _comparison_tuple_from_optimizer_row(self, row):
-        alpha = "No (Uniform)" if row.get("alpha_used") == "No" else self._fmt(row.get("alpha"))
+        alpha = "N/A" if row.get("alpha_used") == "No" else self._fmt(row.get("alpha"))
+        beta = "N/A" if row.get("beta_used") == "No" else self._fmt(row.get("beta"))
         return (
             row.get("method_label", ""),
             alpha,
-            self._fmt(row.get("beta")),
+            beta,
             self._fmt(row.get("ndcg_at_15")),
             self._fmt(row.get("recall_at_15")),
             str(int(self._float(row.get("common_genes_top_15")))),
@@ -470,7 +492,7 @@ class BackendService:
             "Ready" if os.path.isfile(path) and os.path.getsize(path) > 0 else "Missing"
         )
 
-    def _normalize_and_validate_input_paths(self, file_map):
+    def _normalize_and_validate_input_paths(self, file_map, ablation_mode=ABLATION_MODE_FULL):
         input_paths = state_file_paths_to_backend(file_map)
         expected_columns = {
             "ppi_file_path": ("PPI network", 2),
@@ -480,7 +502,8 @@ class BackendService:
             "map__gene__ontologies_file_path": ("Gene-ontology mapping", 3),
             "disease_ontology_file_path": ("Disease-specific ontologies", 2),
         }
-        for key, (label, min_columns) in expected_columns.items():
+        for key in required_input_keys(ablation_mode):
+            label, min_columns = expected_columns[key]
             path = input_paths.get(key, "")
             if not path:
                 raise ValueError(f"Missing required input: {label}.")
@@ -497,6 +520,8 @@ class BackendService:
             raise ValueError(f"Gene mapping file does not exist: {GENE_MAPPING_PATH}")
 
     def _validation_reference_path(self, disease_code=None):
+        if hasattr(self.state, "validation_path_for"):
+            return self.state.validation_path_for(disease_code)
         if not disease_code:
             return ONCOKB_PATH
         return get_validation_reference_path(
@@ -559,6 +584,7 @@ class BackendService:
                     "gene_symbol": row["GeneSymbol"],
                     "score": score,
                     "oncokb_hit": row["OncoKBHit"] == "Yes",
+                    "search_text": f"{row['GeneNames']} {row['GeneSymbol']}".upper(),
                 }
             )
 
@@ -656,8 +682,8 @@ class BackendService:
         self.state.optuna_trials = [
             {
                 "trial_id": int(float(row.get("trial_number", 0))) + 1,
-                "alpha": self._float(row.get("alpha")),
-                "beta": self._float(row.get("beta")),
+                "alpha": self._optional_float(row.get("alpha")),
+                "beta": self._optional_float(row.get("beta")),
                 "recall_15": self._float(row.get("recall_at_15")),
                 "ndcg_15": self._float(row.get("ndcg_at_15")),
                 "common_15": int(self._float(row.get("common_genes_top_15"))),
@@ -679,6 +705,7 @@ class BackendService:
             "disease": disease,
             "dataset_profile": self.state.dataset_profile,
             "evaluation_mode": self.state.evaluation_mode,
+            "validation_file_path": self._validation_reference_path(disease),
             "algorithm": algorithm,
             "algorithm_label": ALGORITHM_LABELS.get(algorithm, algorithm),
             "alpha": alpha,
@@ -706,6 +733,22 @@ class BackendService:
         with open(path, newline="", encoding="utf-8-sig") as fp:
             return list(csv.DictReader(fp, delimiter="\t"))
 
+    def _parameter_status_text(self, alpha, beta):
+        return ", ".join(
+            (
+                f"alpha={self._parameter_display(alpha)}",
+                f"beta={self._parameter_display(beta)}",
+            )
+        )
+
+    def _parameter_display(self, value):
+        return "N/A" if value in (None, "") else self._fmt(value)
+
+    def _optional_float(self, value):
+        if value in (None, "", "N/A"):
+            return None
+        return float(value)
+
     def _write_batch_summary(self, rows):
         if not rows:
             return
@@ -714,6 +757,7 @@ class BackendService:
             "disease",
             "dataset_profile",
             "evaluation_mode",
+            "validation_file_path",
             "algorithm",
             "alpha",
             "beta",

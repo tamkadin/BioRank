@@ -2,7 +2,7 @@
 
 BioRank is a GUI-based tool for integrating multi-omics biological data and prioritizing cancer-related genes with biologically informed PageRank and random-walk methods.
 
-The current implementation is **BioRank v2**, a desktop workspace that runs from `main.py`. It resolves runtime paths from the repository root, so the project can be copied to another machine as long as the expected `data_set/` layout is kept.
+The current implementation is **BioRank v2**, a desktop workspace that runs from `main.py`. It resolves runtime paths from the repository root and can detect a renamed data directory when the expected biological input layout is preserved.
 
 For a step-by-step installation and run guide, see [docs/setup_and_run_biorank_v2.md](docs/setup_and_run_biorank_v2.md).
 
@@ -90,10 +90,12 @@ python main.py
 
 BioRank v2 reorganizes the application as a workspace with four main screens:
 
-1. **Input Data Configuration**
-   - Select disease, dataset profile, and evaluation mode.
+1. **Input Data Readiness**
+   - Select cancer type and the `Original` or `Enriched` seed profile.
+   - Select `Pan-cancer OncoKB` or `Cancer-specific OncoKB` validation.
+   - Confirm the validation reference file.
    - Inspect six required input files.
-   - Browse and override input files manually.
+   - Browse and override input files manually, with the filename and parent directory shown separately.
 
 2. **Data Preprocessing**
    - Build ontology graph.
@@ -101,11 +103,11 @@ BioRank v2 reorganizes the application as a workspace with four main screens:
    - Create TCGA tumor/control expression tables.
    - Compute DE genes and co-expression network.
 
-3. **Priority Gene Ranking**
+3. **Cancer Gene Ranking**
    - Run single-disease ranking.
    - Build and preview the integrated network.
    - Run batch ranking for multiple diseases and alpha/beta pairs.
-   - View ranking output and OncoKB-based metrics.
+   - View ranking output and validation metrics.
 
 4. **Parameter Optimization**
    - Run Optuna alpha/beta optimization for BioRank Lite.
@@ -186,7 +188,7 @@ docs/setup_and_run_biorank_v2.md
 
 ## Required Data Layout
 
-The GUI auto-detects default ranking inputs under `data_set/`:
+The GUI first looks for default ranking inputs under `data_set/`:
 
 The full dataset is large, so it is not uploaded directly to git. Download it from Google Drive:
 
@@ -194,7 +196,7 @@ The full dataset is large, so it is not uploaded directly to git. Download it fr
 https://drive.google.com/drive/folders/11TY1KGRpxG2VzStKO1rb5NjBtcNClysP?usp=sharing
 ```
 
-After downloading or extracting the folder, rename the dataset folder to exactly:
+After downloading or extracting the folder, the recommended name is:
 
 ```text
 data_set
@@ -206,6 +208,10 @@ Place it at the repository root, next to `main.py`, so the final path is:
 BioRank/data_set/
 ```
 
+The app also accepts `BIORANK_DATA_DIR` as an explicit path. If `data_set/` is
+absent, one renamed direct child folder can be detected from expected
+subdirectories such as `ppi_network/`, `seed_set/`, and `ontology_network/`.
+
 ```text
 data_set/ppi_network/HIPPIE.tsv
 data_set/co-expression_networks/TCGA-<DISEASE>*co_expression*.tsv
@@ -216,9 +222,11 @@ data_set/ontology_network/ontology_network.tsv
 data_set/disease_specific_ontologies/TCGA-<DISEASE>*disease_ontologies.txt
 data_set/mart_biotool.txt
 data_set/Onco_KB.csv
+data_set/Onco_KB_<DISEASE>.csv
+data_set/Onco_KB <DISEASE>.csv
 ```
 
-For `Dataset New`, BioRank v2 overrides seed and disease ontology with:
+For the `Enriched` seed profile, BioRank v2 overrides the original seed and disease ontology with:
 
 ```text
 data_set/seed_set/New/TCGA-<DISEASE>_seed.txt
@@ -231,10 +239,20 @@ Supported disease codes:
 BLCA, BRCA, COAD, LUAD, PRAD, STAD, THCA
 ```
 
-The app does not split seed genes into train/test sets. Evaluation currently uses:
+The app does not split seed genes into train/test sets. `Pan-cancer OncoKB`
+uses the shared validation reference:
 
 ```text
 data_set/Onco_KB.csv
+```
+
+`Cancer-specific OncoKB` detects per-disease validation references such as:
+
+```text
+data_set/Onco_KB_<DISEASE>.csv
+data_set/Onco_KB <DISEASE>.csv
+data_set/seed_set/New/Onco_KB_<DISEASE>.csv
+data_set/seed_set/New/Onco_KB <DISEASE>.csv
 ```
 
 ---
@@ -263,9 +281,9 @@ python main.py
 4. In the app:
 
 ```text
-Input Data Configuration -> confirm inputs are Ready
-Priority Gene Ranking -> Build Network -> Run Algorithm
-Parameter Optimization -> Start Optuna Engine
+Input Data Readiness -> confirm inputs are Ready
+Cancer Gene Ranking -> Build Network -> Run Gene Ranking
+Parameter Optimization -> Start Optimization
 ```
 
 ---
@@ -303,8 +321,9 @@ To reproduce a ranking run, record:
 
 - Repo version or Git commit.
 - Disease code.
-- Dataset profile: `Dataset` or `Dataset New`.
-- Evaluation mode: `OncoKB`.
+- Seed profile: `Original` or `Enriched`.
+- Validation set: `Pan-cancer OncoKB` or `Cancer-specific OncoKB`.
+- Validation reference path.
 - Algorithm.
 - Alpha and beta.
 - The six input paths shown in the GUI.
@@ -343,6 +362,7 @@ python -m unittest discover tests
 
 - Keep runtime paths relative to the repository root.
 - Do not hard-code user-specific absolute paths.
+- Use `BIORANK_DATA_DIR` when the data directory is outside the repository or cannot be detected unambiguously.
 - Keep generated outputs under `output/`.
 - Keep large or generated runtime files out of source control.
 - Follow [docs/AGENT_RULES.md](docs/AGENT_RULES.md) before changing code or docs.

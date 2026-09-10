@@ -4,11 +4,19 @@ from BioRank.matrix_creation.matrix_aggregation import MatrixAggregation
 
 
 class ConvexCombinationMatrixAggregationCreation(MatrixAggregation):
-    def __init__(self, PPI_network, CO_expression_network, beta, cancellation_event=None):
+    def __init__(
+        self,
+        PPI_network,
+        CO_expression_network,
+        beta,
+        cancellation_event=None,
+        normalized_cache=None,
+    ):
         self.PPI = PPI_network
         self.CO_expression_network = CO_expression_network
         self.beta = beta
         self.cancellation_event = cancellation_event
+        self.normalized_cache = normalized_cache
 
         assert (
             self.PPI is not None and self.CO_expression_network is not None
@@ -35,13 +43,28 @@ class ConvexCombinationMatrixAggregationCreation(MatrixAggregation):
             chosen_policy=chosen_policy,
         )
 
-        ppi_sub_network = self.PPI.subgraph(selected_nodes)
-        co_expression_sub_network = self.CO_expression_network.subgraph(selected_nodes)
+        cache_key = (chosen_policy, id(self.PPI), id(self.CO_expression_network))
+        cached_networks = (
+            self.normalized_cache.get(cache_key)
+            if self.normalized_cache is not None
+            else None
+        )
+        if cached_networks is not None:
+            selected_nodes, normalized_ppi, normalized_co_expression = cached_networks
+        else:
+            ppi_sub_network = self.PPI.subgraph(selected_nodes)
+            co_expression_sub_network = self.CO_expression_network.subgraph(selected_nodes)
 
-        self._check_cancelled()
-        normalized_ppi = self._normalize_graph(ppi_sub_network)
-        self._check_cancelled()
-        normalized_co_expression = self._normalize_graph(co_expression_sub_network)
+            self._check_cancelled()
+            normalized_ppi = self._normalize_graph(ppi_sub_network)
+            self._check_cancelled()
+            normalized_co_expression = self._normalize_graph(co_expression_sub_network)
+            if self.normalized_cache is not None:
+                self.normalized_cache[cache_key] = (
+                    selected_nodes,
+                    normalized_ppi,
+                    normalized_co_expression,
+                )
         self._check_cancelled()
         aggregated_graph = self._aggregate_adjacency_matrix(
             normalized_ppi,

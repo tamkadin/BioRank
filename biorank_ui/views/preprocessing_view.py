@@ -20,17 +20,17 @@ class PreprocessingView(ctk.CTkFrame):
         
         self.steps = {}
         steps_data = [
-            (1, "Step 1: Compute Bipartite Pathway Ontology Graph", 
-             "Builds cross-reference associations mappings linking GO, KEGG, Reactome annotations with Ensembl IDs.",
+            (1, "Step 1: Build the Gene-Ontology Annotation Network",
+             "Integrates GO, KEGG and Reactome annotations and maps them to Ensembl gene identifiers.",
              ["ontology_map"]),
-            (2, "Step 2: Compute Enriched Disease-Specific Ontologies", 
-             "Runs Fisher's exact statistics test with FDR corrections (p < 1e-5) to identify seed functional enrichments.",
+            (2, "Step 2: Enrich Disease-Specific Ontology Terms",
+             "Uses the selected seed set with Fisher's exact test and FDR correction to identify disease-relevant terms.",
              ["disease_ontology"]),
-            (3, "Step 3: Process Clinical Tumor-Control Expression Matrices", 
-             "Parses manifest lists and extracts GDC normal control / tumor clinical RNA-seq profiles.",
+            (3, "Step 3: Prepare Tumor and Normal Expression Matrices",
+             "Uses GDC metadata and RNA-seq files to prepare cancer-specific tumor and normal expression tables.",
              []),
-            (4, "Step 4: Calculate DE Genes & Co-expression PCC Weights", 
-             "Filters genes relative to node lists, evaluates log z-score (>2.5), and computes Pearson correlations correlations (>0.7).",
+            (4, "Step 4: Derive DE Genes and the Co-expression Network",
+             "Filters to the PPI gene universe, identifies differential expression and computes Pearson co-expression weights.",
              ["de_genes", "coexpression"])
         ]
         

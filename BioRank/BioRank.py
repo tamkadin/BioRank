@@ -58,6 +58,9 @@ class BioRankCancerGeneRanking:
         auto_run=True,
         cancellation_event=None,
         progress_callback=None,
+        prepared_input_cache=None,
+        matrix_aggregation_cache=None,
+        personalization_vector_cache=None,
     ):
         self.seed_file_path = seed_file_path
         self.ppi_file_path = ppi_file_path
@@ -77,6 +80,9 @@ class BioRankCancerGeneRanking:
         self.algorithm = algorithm or ALGORITHM_RANDOM_WALK
         self.cancellation_event = cancellation_event
         self.progress_callback = progress_callback
+        self.prepared_input_cache = prepared_input_cache
+        self.matrix_aggregation_cache = matrix_aggregation_cache
+        self.personalization_vector_cache = personalization_vector_cache
 
         self.file_loader_step = None
         self.compute_ppi_weight = None
@@ -117,36 +123,56 @@ class BioRankCancerGeneRanking:
 
         # Pipeline phase 1: load all biological inputs from user-selected files.
         self._check_cancelled()
-        t0 = time.perf_counter()
-        self._emit_progress("Loading networks...", phase="load_inputs")
-        print("Loading networks...")
-        self.file_loader_step = Loader(
-            self.ppi_file_path,
-            self.co_expression_file_path,
-            self.seed_file_path,
-            secondary_seed_file_path=self.secondary_seed_file_path,
-            disease_ontology_file_path=self.disease_ontology_file_path,
-            map_gene_ontologies_file_path=self.map__gene__ontologies_file_path,
-            cancellation_event=self.cancellation_event,
+        input_cache_key = self._prepared_input_cache_key()
+        cached_inputs = (
+            self.prepared_input_cache.get(input_cache_key)
+            if self.prepared_input_cache is not None
+            else None
         )
-        (
-            self.PPI,
-            self.CO_expression,
-            self.seed_set,
-            self.secondary_seed_set,
-            self.map__gene__ontologies,
-            self.disease_ontology,
-        ) = self.file_loader_step.run()
-        print("Loading time:", time.perf_counter() - t0)
-        print()
+        if cached_inputs is not None:
+            (
+                self.PPI,
+                self.CO_expression,
+                self.seed_set,
+                self.secondary_seed_set,
+                self.map__gene__ontologies,
+                self.disease_ontology,
+            ) = cached_inputs
+            self._emit_progress("Reusing loaded and weighted inputs.", phase="load_inputs")
+            print("Reusing loaded and weighted inputs.")
+        else:
+            t0 = time.perf_counter()
+            self._emit_progress("Loading networks...", phase="load_inputs")
+            print("Loading networks...")
+            self.file_loader_step = Loader(
+                self.ppi_file_path,
+                self.co_expression_file_path,
+                self.seed_file_path,
+                secondary_seed_file_path=self.secondary_seed_file_path,
+                disease_ontology_file_path=self.disease_ontology_file_path,
+                map_gene_ontologies_file_path=self.map__gene__ontologies_file_path,
+                cancellation_event=self.cancellation_event,
+            )
+            (
+                self.PPI,
+                self.CO_expression,
+                self.seed_set,
+                self.secondary_seed_set,
+                self.map__gene__ontologies,
+                self.disease_ontology,
+            ) = self.file_loader_step.run()
+            print("Loading time:", time.perf_counter() - t0)
+            print()
+        ppi_nodes = self.PPI.number_of_nodes() if self.PPI is not None else 0
+        co_expression_nodes = self.CO_expression.number_of_nodes() if self.CO_expression is not None else 0
         self._emit_progress(
-            f"Loaded inputs: PPI nodes={self.PPI.number_of_nodes()}, co-expression nodes={self.CO_expression.number_of_nodes()}",
+            f"Loaded inputs: PPI nodes={ppi_nodes}, co-expression nodes={co_expression_nodes}",
             phase="load_inputs",
         )
         self._check_cancelled()
 
         # Pipeline phase 2: enrich PPI edges using disease ontology evidence.
-        if self.network_weight_flag:
+        if cached_inputs is None and self.network_weight_flag:
             self._check_cancelled()
             t0 = time.perf_counter()
             self._emit_progress("Weighting PPI edges with disease ontology evidence...", phase="weight_ppi")
@@ -162,6 +188,16 @@ class BioRankCancerGeneRanking:
             print()
             self._emit_progress("PPI edge weighting completed.", phase="weight_ppi")
             self._check_cancelled()
+
+        if cached_inputs is None and self.prepared_input_cache is not None:
+            self.prepared_input_cache[input_cache_key] = (
+                self.PPI,
+                self.CO_expression,
+                self.seed_set,
+                self.secondary_seed_set,
+                self.map__gene__ontologies,
+                self.disease_ontology,
+            )
 
         # Pipeline phase 3: aggregate PPI and co-expression into the graph used by ranking.
         self._check_cancelled()
@@ -225,19 +261,31 @@ class BioRankCancerGeneRanking:
             "...",
         )
         self._check_cancelled()
-        personalization_vectors = self.compute_personalization_vectors(
-            seed_set=self.seed_set,
-            V=self.V,
-            disease_ontology=self.disease_ontology,
-            map__gene_name__ontologies=self.map__gene__ontologies,
-            universe_ontologies=None,
-            G=self.G,
-            secondary_seed_set=self.secondary_seed_set,
-            chosen_policies=self.personalization_vector_creation_policies,
+        personalization_cache_key = self._personalization_vector_cache_key()
+        personalization_vectors = (
+            self.personalization_vector_cache.get(personalization_cache_key)
+            if self.personalization_vector_cache is not None and personalization_cache_key is not None
+            else None
         )
-        print("Time for computing personalization vectors:", time.perf_counter() - t0)
-        print()
-        self._emit_progress("Personalization vectors completed.", phase="personalization")
+        if personalization_vectors is not None:
+            self._emit_progress("Reusing personalization vectors.", phase="personalization")
+            print("Reusing personalization vectors.")
+        else:
+            personalization_vectors = self.compute_personalization_vectors(
+                seed_set=self.seed_set,
+                V=self.V,
+                disease_ontology=self.disease_ontology,
+                map__gene_name__ontologies=self.map__gene__ontologies,
+                universe_ontologies=None,
+                G=self.G,
+                secondary_seed_set=self.secondary_seed_set,
+                chosen_policies=self.personalization_vector_creation_policies,
+            )
+            if self.personalization_vector_cache is not None and personalization_cache_key is not None:
+                self.personalization_vector_cache[personalization_cache_key] = personalization_vectors
+            print("Time for computing personalization vectors:", time.perf_counter() - t0)
+            print()
+            self._emit_progress("Personalization vectors completed.", phase="personalization")
         self._check_cancelled()
 
         t0 = time.perf_counter()
@@ -343,6 +391,7 @@ class BioRankCancerGeneRanking:
                 CO_expression_network,
                 self.beta,
                 cancellation_event=self.cancellation_event,
+                normalized_cache=self.matrix_aggregation_cache,
             )
             return matrix_creation_step.run(chosen_policy="PPI_network")
 
@@ -353,6 +402,36 @@ class BioRankCancerGeneRanking:
             return CO_expression_network, set(CO_expression_network.nodes())
 
         raise ValueError(f"Unsupported matrix aggregation policy: {matrix_aggregation_policy}")
+
+    def _prepared_input_cache_key(self):
+        return (
+            self.ppi_file_path,
+            self.co_expression_file_path,
+            self.seed_file_path,
+            self.secondary_seed_file_path,
+            self.disease_ontology_file_path,
+            self.map__gene__ontologies_file_path,
+            self.network_weight_flag,
+        )
+
+    def _personalization_vector_cache_key(self):
+        if self.V is None:
+            return None
+        return (
+            tuple(self.personalization_vector_creation_policies),
+            self.matrix_aggregation_policy,
+            self._graph_topology_cache_bucket(),
+            id(self.seed_set),
+            id(self.secondary_seed_set),
+            id(self.map__gene__ontologies),
+            id(self.disease_ontology),
+            len(self.V),
+        )
+
+    def _graph_topology_cache_bucket(self):
+        if self.matrix_aggregation_policy == "convex_combination":
+            return "beta_zero" if float(self.beta) <= 0.0 else "beta_positive"
+        return self.matrix_aggregation_policy
 
     def get_network_summary(self):
         if self.G is None:

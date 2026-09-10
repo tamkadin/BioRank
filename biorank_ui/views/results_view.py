@@ -1,4 +1,5 @@
 import customtkinter as ctk
+from biorank_ui.config import get_evaluation_mode_label
 from biorank_ui.state import AppState
 from biorank_ui.components import DataTable
 from biorank_ui.theme import (
@@ -12,6 +13,8 @@ class ResultsView(ctk.CTkFrame):
         super().__init__(master, fg_color=APP_BG, **kwargs)
         self.state = state
         self._filtered_rows = []
+        self._table_render_key = None
+        self._filter_job = None
         
         # Horizontal KPI Metric Cards
         self.kpi_container = ctk.CTkFrame(self, fg_color="transparent")
@@ -23,12 +26,12 @@ class ResultsView(ctk.CTkFrame):
         self.kpis = {}
         self.kpi_descriptions = {}
         kpi_configs = [
-            ("recall_15", "Recall@15", "OncoKB reference genes captured in top 15."),
-            ("recall_100", "Recall@100", "OncoKB reference genes captured in top 100."),
+            ("recall_15", "Recall@15", "Validation genes captured in top 15."),
+            ("recall_100", "Recall@100", "Validation genes captured in top 100."),
             ("ndcg_15", "nDCG@15", "Position-aware hit quality in top 15."),
             ("ndcg_100", "nDCG@100", "Position-aware hit quality in top 100."),
-            ("common_15", "Common@15", "OncoKB overlaps in the top 15."),
-            ("common_100", "Common@100", "OncoKB overlaps in the top 100."),
+            ("common_15", "Matches@15", "Validation genes in the top 15."),
+            ("common_100", "Matches@100", "Validation genes in the top 100."),
         ]
         
         for idx, (key, title, desc) in enumerate(kpi_configs):
@@ -59,11 +62,11 @@ class ResultsView(ctk.CTkFrame):
         self.search_entry.pack(side="left", padx=(0, 10))
         self.search_entry.bind("<KeyRelease>", self._on_filter_changed)
         
-        self.filter_hits_cb = ctk.CTkCheckBox(self.toolbar, text="OncoKB Hits Only", font=(FONT_FAMILY_BODY, 13), text_color=TEXT_MAIN,
+        self.filter_hits_cb = ctk.CTkCheckBox(self.toolbar, text="Validation Matches Only", font=(FONT_FAMILY_BODY, 13), text_color=TEXT_MAIN,
                                               command=self._on_filter_changed, checkbox_height=18, checkbox_width=18)
         self.filter_hits_cb.pack(side="left", padx=10)
         
-        self.limit_lbl = ctk.CTkLabel(self.toolbar, text="Show Limit:", font=(FONT_FAMILY_BODY, 13), text_color=TEXT_MAIN)
+        self.limit_lbl = ctk.CTkLabel(self.toolbar, text="Rows:", font=(FONT_FAMILY_BODY, 13), text_color=TEXT_MAIN)
         self.limit_lbl.pack(side="right", padx=(10, 4))
         
         self.limit_segmented = ctk.CTkSegmentedButton(self.toolbar, values=["100", "500", "All"], 
@@ -82,12 +85,18 @@ class ResultsView(ctk.CTkFrame):
         self.source_label.pack(fill="x", padx=18, pady=(0, 8))
         
         # Grid table
-        cols = ("#", "Ensembl ID", "Gene Symbol", "Prioritization Score", "OncoKB Hit")
-        col_w = {"#": 50, "Ensembl ID": 180, "Gene Symbol": 140, "Prioritization Score": 180, "OncoKB Hit": 100}
+        cols = ("#", "Ensembl ID", "Gene Symbol", "Prioritization Score", "Validation Match")
+        col_w = {"#": 50, "Ensembl ID": 180, "Gene Symbol": 140, "Prioritization Score": 180, "Validation Match": 110}
         self.table = DataTable(self.table_card, cols, col_w)
         self.table.pack(fill="both", expand=True, padx=18, pady=(0, 18))
         
     def _on_filter_changed(self, event=None):
+        if self._filter_job is not None:
+            self.after_cancel(self._filter_job)
+        self._filter_job = self.after(150, self._apply_debounced_filter)
+
+    def _apply_debounced_filter(self):
+        self._filter_job = None
         self._refilter_table()
         
     def _on_limit_changed(self, value):
@@ -95,20 +104,30 @@ class ResultsView(ctk.CTkFrame):
         
     def _refilter_table(self):
         if not self.state.active_results:
-            self.table.clear()
+            if self._table_render_key is not None:
+                self.table.clear()
+                self._table_render_key = None
             return
             
         query = self.search_entry.get().strip().upper()
         hits_only = bool(self.filter_hits_cb.get())
         limit = self.limit_segmented.get()
+        render_key = (
+            id(self.state.active_results),
+            len(self.state.active_results),
+            self.state.active_result_path,
+            query,
+            hits_only,
+            limit,
+        )
+        if render_key == self._table_render_key:
+            return
         
         filtered = []
         for r in self.state.active_results:
-            symbol = r["gene_symbol"].upper()
-            ensembl = r["ensembl_id"].upper()
             is_hit = r["oncokb_hit"]
             
-            if query and query not in symbol and query not in ensembl:
+            if query and query not in r.get("search_text", ""):
                 continue
             if hits_only and not is_hit:
                 continue
@@ -131,14 +150,16 @@ class ResultsView(ctk.CTkFrame):
             ))
             
         self.table.insert_rows(rows_to_insert)
+        self._table_render_key = render_key
 
     def update_view(self):
-        self.kpi_descriptions["recall_15"].configure(text="OncoKB reference genes captured in top 15.")
-        self.kpi_descriptions["recall_100"].configure(text="OncoKB reference genes captured in top 100.")
-        self.kpi_descriptions["common_15"].configure(text="OncoKB overlaps in the top 15.")
-        self.kpi_descriptions["common_100"].configure(text="OncoKB overlaps in the top 100.")
-        self.filter_hits_cb.configure(text="OncoKB Hits Only")
-        self.table.tree.heading("OncoKB Hit", text="OncoKB Hit")
+        validation_label = get_evaluation_mode_label(self.state.evaluation_mode)
+        self.kpi_descriptions["recall_15"].configure(text=f"{validation_label} genes captured in top 15.")
+        self.kpi_descriptions["recall_100"].configure(text=f"{validation_label} genes captured in top 100.")
+        self.kpi_descriptions["common_15"].configure(text=f"{validation_label} overlaps in the top 15.")
+        self.kpi_descriptions["common_100"].configure(text=f"{validation_label} overlaps in the top 100.")
+        self.filter_hits_cb.configure(text="Validation Matches Only")
+        self.table.tree.heading("Validation Match", text="Validation Match")
         kpis = self.state.kpi_metrics
         self.kpis["recall_15"].configure(text=f"{kpis['recall_15']:.4f}")
         self.kpis["recall_100"].configure(text=f"{kpis['recall_100']:.4f}")
@@ -148,7 +169,7 @@ class ResultsView(ctk.CTkFrame):
         self.kpis["common_100"].configure(text=f"{kpis['common_100']}")
         if self.state.active_result_path:
             self.source_label.configure(
-                text=f"Ranking source: {self.state.active_result_path} | Evaluation: {self.state.evaluation_mode}"
+                text=f"Ranking source: {self.state.active_result_path} | Validation reference: {validation_label}"
             )
         else:
             self.source_label.configure(text="No ranking output loaded.")

@@ -1,43 +1,33 @@
-class PersonalizationVectorAggregation():
-	
-	def __init__(self, personalization_vectors,universe,alpha):
+class PersonalizationVectorAggregation:
+    def __init__(self, personalization_vectors, universe, alpha):
+        self.alpha = alpha
+        self.universe = universe
+        self.personalization_vectors = list(personalization_vectors)
 
-		self.alpha = alpha
-		self.universe = universe
-		self.map__index__p_vs = {i:p_v for i,p_v in enumerate(personalization_vectors)}
-		
+    def run(self, chosen_policy="Sum"):
+        if not self.personalization_vectors:
+            raise ValueError("At least one personalization vector is required.")
 
-	def run(self,chosen_policy = "Sum"):
-		
-		aggregated_personalization_vector = {}
-	
-		for node in self.universe:
-			aggregated_personalization_vector[node] = 0.0
+        if len(self.personalization_vectors) == 1:
+            return self._normalize(self.personalization_vectors[0])
 
-			for i, p_v in self.map__index__p_vs.items():
+        aggregated = {node: 0.0 for node in self.universe}
+        for node in self.universe:
+            for index, vector in enumerate(self.personalization_vectors):
+                if index == 0:
+                    aggregated[node] += self.alpha * vector[node]
+                elif chosen_policy == "Sum":
+                    aggregated[node] += (1 - self.alpha) * vector[node]
+                elif chosen_policy == "Product":
+                    aggregated[node] *= vector[node]
+                else:
+                    raise ValueError(f"Unsupported personalization aggregation policy: {chosen_policy}")
 
-				if i == 0:
-					aggregated_personalization_vector[node] += (self.alpha)*p_v[node]
+        return self._normalize(aggregated)
 
-				else:
-					if chosen_policy == "Sum":
-						aggregated_personalization_vector[node] += (1 - self.alpha)*p_v[node]
-					
-					elif chosen_policy == "Product":
-						aggregated_personalization_vector[node] *= p_v[node]
-
-		l_1 = sum(aggregated_personalization_vector.values())
-
-		personalization_vectors = {k: v/l_1 for k,v in aggregated_personalization_vector.items()}
-
-		return personalization_vectors
-
-
-
-
-
-
-
-
-
-
+    def _normalize(self, vector):
+        values = {node: float(vector[node]) for node in self.universe}
+        l_1 = sum(values.values())
+        if l_1 <= 0.0:
+            raise ValueError("Personalization vector must have a positive L1 norm.")
+        return {node: value / l_1 for node, value in values.items()}

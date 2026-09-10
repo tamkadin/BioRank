@@ -1,17 +1,54 @@
+# Python cache / test cache
 __pycache__/
-.pytest_cache/
-*.pyc
+*.py[cod]
 *.pyo
 *.pyd
-*.log
-*.tmp
-*.DS_Store
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+coverage.xml
+htmlcov/
+
+# OS / editor / local agent state
+.DS_Store
+Thumbs.db
+.vscode/
+.idea/
+.agents/
+.codex/
+
+# Local environments / secrets
 .env
+.env.*
 .venv/
 venv/
 Bioenv/
-*.sqlite3
-output/
+biorank_env/
+
+# Build / package artifacts
+build/
 dist/
+*.egg-info/
+
+# Runtime databases / logs / temporary files
+*.db
+*.sqlite
+*.sqlite3
+*.log
+*.tmp
+
+# Large local biological datasets and generated pipeline outputs
 data_set/
-tests/
+output/
+
+# Manuscript/report exports kept outside the code repo
+Latex/
+*.docx
+*.pptx
+*.xlsx
+*.xls
+
+# Generated visualization artifacts; keep visualization scripts tracked
+visualize/output_*/
+visualize/mock_trial_history_*.tsv

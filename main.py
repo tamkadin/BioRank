@@ -8,11 +8,20 @@ import customtkinter as ctk
 
 # Imports configurations, themes, states, and components
 from biorank_ui.config import (
-    DATASET_PROFILES,
+    DATASET_DIR,
     DISEASES,
-    EVALUATION_MODES,
+    EVALUATION_MODE_DISPLAY_LABELS,
+    SEED_PROFILE_LABELS,
     build_default_state_file_paths,
-    get_validation_reference_path,
+    get_dataset_profile_label,
+    get_dataset_profile_value,
+    get_evaluation_mode_label,
+    get_evaluation_mode_value,
+)
+from BioRank.optimization.ablation_config import (
+    ABLATION_MODE_FULL,
+    ablation_label,
+    required_input_keys,
 )
 from biorank_ui.theme import (
     APP_BG, CARD_BG, BORDER, PRIMARY, DEEP_BLUE, SOFT_BLUE, TEXT_MAIN, TEXT_MUTED,
@@ -29,6 +38,10 @@ from biorank_ui.views.dashboard_view import DashboardView
 from biorank_ui.views.preprocessing_view import PreprocessingView
 from biorank_ui.views.ranking_view import RankingView
 from biorank_ui.views.optimization_view import OptimizationView
+
+OPTUNA_UI_UPDATE_DELAY_MS = 250
+OPTUNA_HEARTBEAT_MS = 1000
+
 
 class BioRankApp(ctk.CTk):
     def __init__(self):
@@ -74,6 +87,9 @@ class BioRankApp(ctk.CTk):
         self.preprocessing_input_drafts = {}
         self._optuna_ui_start_time = None
         self._optuna_heartbeat_job = None
+        self._optuna_update_job = None
+        self._pending_optuna_update = None
+        self.active_view_key = None
         
         # Mount initial Dashboard view
         self.switch_view("dashboard")
@@ -95,10 +111,10 @@ class BioRankApp(ctk.CTk):
         
         self.nav_buttons = {}
         nav_items = [
-            ("dashboard", "1. Input Data Configuration"),
+            ("dashboard", "1. Input Data Readiness"),
             ("preprocessing", "2. Data Preprocessing"),
-            ("ranking", "3. Priority Gene Ranking"),
-            ("optimization", "4. Parameter Optimization")
+            ("ranking", "3. Cancer Gene Ranking"),
+            ("optimization", "4. Parameter Optimization"),
         ]
         
         for key, label in nav_items:
@@ -115,7 +131,7 @@ class BioRankApp(ctk.CTk):
         self.headerbar = ctk.CTkFrame(self.main_container, fg_color=CARD_BG, height=64, corner_radius=0, border_color=BORDER, border_width=1)
         self.headerbar.grid(row=0, column=0, sticky="ew")
         
-        self.disease_lbl = ctk.CTkLabel(self.headerbar, text="Cancer:", font=(FONT_FAMILY_HEADER, 14), text_color=TEXT_MAIN)
+        self.disease_lbl = ctk.CTkLabel(self.headerbar, text="Cancer type:", font=(FONT_FAMILY_HEADER, 14), text_color=TEXT_MAIN)
         self.disease_lbl.pack(side="left", padx=(12, 4))
         
         self.disease_combo = ctk.CTkComboBox(self.headerbar, values=DISEASES, font=(FONT_FAMILY_HEADER, 15),
@@ -126,48 +142,51 @@ class BioRankApp(ctk.CTk):
 
         self.dataset_profile_lbl = ctk.CTkLabel(
             self.headerbar,
-            text="Dataset:",
+            text="Seed profile:",
             font=(FONT_FAMILY_HEADER, 14),
             text_color=TEXT_MAIN,
         )
         self.dataset_profile_lbl.pack(side="left", padx=(12, 4))
         self.dataset_profile_combo = ctk.CTkComboBox(
             self.headerbar,
-            values=DATASET_PROFILES,
+            values=SEED_PROFILE_LABELS,
             font=(FONT_FAMILY_HEADER, 14),
             fg_color=APP_BG,
             text_color=TEXT_MAIN,
             button_color=PRIMARY,
             button_hover_color=STATUS_RUNNING,
             height=34,
-            width=112,
+            width=108,
             command=self._on_dataset_profile_changed,
         )
         self.dataset_profile_combo.pack(side="left", padx=4)
-        self.dataset_profile_combo.set(self.app_state.dataset_profile)
-
-        self.evaluation_mode_lbl = ctk.CTkLabel(
-            self.headerbar,
-            text="Eval:",
-            font=(FONT_FAMILY_HEADER, 14),
-            text_color=TEXT_MAIN,
+        self.dataset_profile_combo.set(
+            get_dataset_profile_label(self.app_state.dataset_profile)
         )
-        self.evaluation_mode_lbl.pack(side="left", padx=(12, 4))
-        self.evaluation_mode_combo = ctk.CTkComboBox(
+
+        self.validation_reference_lbl = ctk.CTkLabel(
             self.headerbar,
-            values=EVALUATION_MODES,
+            text="Validation set:",
+            font=(FONT_FAMILY_HEADER, 13),
+            text_color=TEXT_MUTED,
+        )
+        self.validation_reference_lbl.pack(side="left", padx=(16, 4))
+        self.validation_reference_combo = ctk.CTkComboBox(
+            self.headerbar,
+            values=EVALUATION_MODE_DISPLAY_LABELS,
             font=(FONT_FAMILY_HEADER, 13),
             fg_color=APP_BG,
             text_color=TEXT_MAIN,
             button_color=PRIMARY,
             button_hover_color=STATUS_RUNNING,
             height=34,
-            width=150,
+            width=175,
             command=self._on_evaluation_mode_changed,
         )
-        self.evaluation_mode_combo.pack(side="left", padx=4)
-        self.evaluation_mode_combo.set(self.app_state.evaluation_mode)
-        self.evaluation_mode_combo.configure(state="disabled")
+        self.validation_reference_combo.pack(side="left", padx=4)
+        self.validation_reference_combo.set(
+            get_evaluation_mode_label(self.app_state.evaluation_mode)
+        )
         
         self.header_status_lbl = ctk.CTkLabel(self.headerbar, text="| Status: Idle", font=(FONT_FAMILY_BODY, 14), text_color=TEXT_MUTED)
         self.header_status_lbl.pack(side="left", padx=15)
@@ -184,7 +203,7 @@ class BioRankApp(ctk.CTk):
         
         # Mount views dynamically
         self.views = {
-            "dashboard": DashboardView(self.view_container, self.app_state, self.browse_dataset_card_file),
+            "dashboard": DashboardView(self.view_container, self.app_state, self.browse_dataset_card_file, self.browse_validation_reference_file),
             "preprocessing": PreprocessingView(self.view_container, self.app_state, self.trigger_preprocessing_step),
             "ranking": RankingView(self.view_container, self.app_state, self.build_network, self.open_preview_window, self.run_prioritization, self.run_ranking_batch),
             "optimization": OptimizationView(self.view_container, self.app_state, self.trigger_optuna_tuning)
@@ -203,6 +222,7 @@ class BioRankApp(ctk.CTk):
                 btn.configure(fg_color="transparent")
                 
         self.views[view_key].tkraise()
+        self.active_view_key = view_key
         
         if hasattr(self.views[view_key], "update_view"):
             self.views[view_key].update_view()
@@ -215,47 +235,88 @@ class BioRankApp(ctk.CTk):
         self.app_state.set_disease(value)
         missing = self._missing_profile_files([value])
         if missing:
-            self.header_status_lbl.configure(text=f"| Status: {self.app_state.dataset_profile} is incomplete for {value}")
-            messagebox.showwarning("Dataset profile incomplete", self._format_missing_profile_message(missing))
+            profile_label = get_dataset_profile_label(self.app_state.dataset_profile)
+            self.header_status_lbl.configure(text=f"| Status: {profile_label} inputs incomplete for {value}")
+            messagebox.showwarning("Seed profile incomplete", self._format_missing_profile_message(missing))
         else:
-            self.header_status_lbl.configure(text=f"| Status: Disease profile shifted to {value}")
+            self.header_status_lbl.configure(text=f"| Status: Cancer type set to {value}")
 
     def _on_dataset_profile_changed(self, value):
         if self.app_state.is_running:
-            messagebox.showwarning("Run in progress", "Cannot change dataset while a pipeline task is running.")
-            self.dataset_profile_combo.set(self.app_state.dataset_profile)
+            messagebox.showwarning("Run in progress", "Cannot change the seed profile while a pipeline task is running.")
+            self.dataset_profile_combo.set(
+                get_dataset_profile_label(self.app_state.dataset_profile)
+            )
             return
-        self.app_state.set_dataset_profile(value)
-        self.evaluation_mode_combo.set(self.app_state.evaluation_mode)
+        dataset_profile = get_dataset_profile_value(value)
+        self.app_state.set_dataset_profile(dataset_profile)
         missing = self._missing_profile_files([self.app_state.current_disease])
         if missing:
-            self.header_status_lbl.configure(text=f"| Status: {value} is incomplete for {self.app_state.current_disease}")
-            messagebox.showwarning("Dataset profile incomplete", self._format_missing_profile_message(missing))
+            self.header_status_lbl.configure(text=f"| Status: {value} inputs incomplete for {self.app_state.current_disease}")
+            messagebox.showwarning("Seed profile incomplete", self._format_missing_profile_message(missing))
         else:
-            self.header_status_lbl.configure(text=f"| Status: Using {value}")
+            self.header_status_lbl.configure(text=f"| Status: Using {value} seed profile")
 
     def _on_evaluation_mode_changed(self, value):
         if self.app_state.is_running:
-            messagebox.showwarning("Run in progress", "Cannot change evaluation mode while a pipeline task is running.")
-            self.evaluation_mode_combo.set(self.app_state.evaluation_mode)
+            messagebox.showwarning("Run in progress", "Cannot change validation set while a pipeline task is running.")
+            self.validation_reference_combo.set(
+                get_evaluation_mode_label(self.app_state.evaluation_mode)
+            )
             return
-        self.app_state.set_evaluation_mode(value)
+        evaluation_mode = get_evaluation_mode_value(value)
+        self.app_state.set_evaluation_mode(evaluation_mode)
         missing = self._missing_profile_files([self.app_state.current_disease])
         if missing:
-            self.header_status_lbl.configure(text=f"| Status: {value} inputs are incomplete")
-            messagebox.showwarning("Evaluation inputs incomplete", self._format_missing_profile_message(missing))
+            self.header_status_lbl.configure(text=f"| Status: {value} validation missing for {self.app_state.current_disease}")
+            messagebox.showwarning("Validation reference missing", self._format_missing_profile_message(missing))
         else:
-            self.header_status_lbl.configure(text=f"| Status: Evaluation mode {value}")
+            self.header_status_lbl.configure(text=f"| Status: Using {value} validation")
 
     def browse_dataset_card_file(self, key):
         if self.app_state.is_running:
             messagebox.showwarning("Run in progress", "Cannot change input files while a pipeline task is running.")
             return
-        file_path = filedialog.askopenfilename(title="Select Biological Dataset Path",
-                                               filetypes=[("Tab Separated Values", "*.tsv;*.txt"), ("All Files", "*.*")])
+        input_labels = {
+            "ppi": "PPI network",
+            "coexpression": "co-expression network",
+            "seed": "cancer gene seed set",
+            "de_genes": "differentially expressed genes",
+            "ontology_map": "gene-ontology annotation network",
+            "disease_ontology": "disease-specific ontology terms",
+        }
+        current_path = self.app_state.file_paths.get(key, "")
+        initial_dir = os.path.dirname(current_path) if current_path else DATASET_DIR
+        if not os.path.isdir(initial_dir):
+            initial_dir = DATASET_DIR
+        input_label = input_labels.get(key, "biological input")
+        file_path = filedialog.askopenfilename(
+            title=f"Select {input_label}",
+            initialdir=initial_dir,
+            filetypes=[("Tab/text files", ("*.tsv", "*.txt", "*.csv")), ("All files", "*")],
+        )
         if file_path:
             self.app_state.set_file_path(key, file_path)
-            self.header_status_lbl.configure(text=f"| Loaded manual file override for: {key}")
+            self.header_status_lbl.configure(text=f"| Status: Selected {input_label}")
+
+    def browse_validation_reference_file(self):
+        if self.app_state.is_running:
+            messagebox.showwarning("Run in progress", "Cannot change validation file while a pipeline task is running.")
+            return
+        current_path = getattr(self.app_state, "validation_file_path", "")
+        initial_dir = os.path.dirname(current_path) if current_path else DATASET_DIR
+        if not os.path.isdir(initial_dir):
+            initial_dir = DATASET_DIR
+        file_path = filedialog.askopenfilename(
+            title=f"Select {get_evaluation_mode_label(self.app_state.evaluation_mode)} file",
+            initialdir=initial_dir,
+            filetypes=[("CSV files", "*.csv"), ("Tab/text files", ("*.tsv", "*.txt")), ("All files", "*")],
+        )
+        if file_path:
+            self.app_state.set_validation_file_path(file_path)
+            self.header_status_lbl.configure(
+                text=f"| Status: Selected {get_evaluation_mode_label(self.app_state.evaluation_mode)} reference"
+            )
 
     # --- Asynchronous Tasks Dispatches ---
     def show_overlay(self, cancel_callback):
@@ -367,7 +428,7 @@ class BioRankApp(ctk.CTk):
     def run_ranking_batch(self, batch_jobs):
         missing = self._missing_profile_files([job["disease"] for job in batch_jobs])
         if missing:
-            messagebox.showerror("Dataset profile incomplete", self._format_missing_profile_message(missing))
+            messagebox.showerror("Seed profile incomplete", self._format_missing_profile_message(missing))
             return
         self.app_state.is_running = True
         self.app_state.cancel_event.clear()
@@ -378,8 +439,12 @@ class BioRankApp(ctk.CTk):
         self.views["ranking"].add_log(
             f"Starting batch ranking queue: {len(batch_jobs)} disease block(s), {total_pairs} job(s)."
         )
-        self.views["ranking"].add_log(f"Dataset profile: {self.app_state.dataset_profile}")
-        self.views["ranking"].add_log(f"Evaluation mode: {self.app_state.evaluation_mode}")
+        self.views["ranking"].add_log(
+            f"Seed profile: {get_dataset_profile_label(self.app_state.dataset_profile)}"
+        )
+        self.views["ranking"].add_log(
+            f"Validation reference: {get_evaluation_mode_label(self.app_state.evaluation_mode)}"
+        )
 
         jobs = []
         for batch_job in batch_jobs:
@@ -414,23 +479,51 @@ class BioRankApp(ctk.CTk):
 
         threading.Thread(target=bg_run, daemon=True).start()
 
-    def trigger_optuna_tuning(self, n_trials, seed, diseases=None):
+    def trigger_optuna_tuning(self, n_trials, seed, diseases=None, ablation_modes=None):
         diseases = list(diseases or [self.app_state.current_disease])
-        missing = self._missing_profile_files(diseases)
+        ablation_modes = list(ablation_modes or [ABLATION_MODE_FULL])
+        jobs = [
+            {"disease": disease, "ablation_mode": ablation_mode}
+            for disease in diseases
+            for ablation_mode in ablation_modes
+        ]
+        missing = self._missing_profile_files(diseases, ablation_modes=ablation_modes)
         if missing:
-            messagebox.showerror("Dataset profile incomplete", self._format_missing_profile_message(missing))
+            messagebox.showerror("Seed profile incomplete", self._format_missing_profile_message(missing))
             return
         self.app_state.is_running = True
         self.app_state.cancel_event.clear()
+        self.app_state.pause_event.clear()
+        self.app_state.optuna_is_paused = False
         self._optuna_ui_start_time = time.perf_counter()
         
         def cancel_work():
             self.app_state.cancel_event.set()
+            self.app_state.pause_event.clear()
             self.app_state.optuna_status_text = "Cancellation requested. Waiting for current pipeline checkpoint..."
             self.app_state.add_optuna_log("Cancellation requested by user.")
             self.header_status_lbl.configure(text="| Optuna optimization abort requested...")
             if hasattr(self, "optuna_cancel_btn") and self.optuna_cancel_btn.winfo_exists():
                 self.optuna_cancel_btn.configure(state="disabled", text="Cancelling...")
+            if hasattr(self, "optuna_pause_btn") and self.optuna_pause_btn.winfo_exists():
+                self.optuna_pause_btn.configure(state="disabled")
+            self.views["optimization"].update_view()
+
+        def toggle_pause():
+            if self.app_state.pause_event.is_set():
+                self.app_state.pause_event.clear()
+                self.app_state.optuna_is_paused = False
+                self.app_state.optuna_phase = "resuming"
+                self.app_state.optuna_status_text = "Resume requested. Continuing optimization..."
+                self.app_state.add_optuna_log("Resume requested by user.")
+                self.optuna_pause_btn.configure(text="Pause")
+            else:
+                self.app_state.pause_event.set()
+                self.app_state.optuna_is_paused = True
+                self.app_state.optuna_phase = "pause_requested"
+                self.app_state.optuna_status_text = "Pause requested. Waiting for a safe optimization checkpoint..."
+                self.app_state.add_optuna_log("Pause requested by user.")
+                self.optuna_pause_btn.configure(text="Resume")
             self.views["optimization"].update_view()
             
         self.views["optimization"].run_btn.configure(state="disabled", text="Tuning...")
@@ -438,29 +531,75 @@ class BioRankApp(ctk.CTk):
         self.views["optimization"].seed_entry.configure(state="disabled")
         self._set_optional_optimization_widget_state("balance_cb", "disabled")
         
-        self.optuna_cancel_btn = ctk.CTkButton(self.views["optimization"].config_card, text="✕ Cancel Run", 
-                                                fg_color=STATUS_ERROR, hover_color="#990000", text_color="#FFFFFF",
-                                                height=36, width=120, command=cancel_work)
-        self.optuna_cancel_btn.grid(row=1, column=1, rowspan=2, columnspan=2, padx=(150, 20), pady=4, sticky="e")
+        self.optuna_action_frame = ctk.CTkFrame(
+            self.views["optimization"].config_card,
+            fg_color=CARD_BG,
+        )
+        self.optuna_action_frame.grid(row=1, column=1, rowspan=2, columnspan=2, padx=(120, 20), pady=4, sticky="e")
+        self.optuna_pause_btn = ctk.CTkButton(
+            self.optuna_action_frame,
+            text="Pause",
+            fg_color=SOFT_BLUE,
+            hover_color=BORDER,
+            text_color=PRIMARY,
+            height=36,
+            width=96,
+            command=toggle_pause,
+        )
+        self.optuna_pause_btn.pack(side="left", padx=(0, 8))
+        self.optuna_cancel_btn = ctk.CTkButton(
+            self.optuna_action_frame,
+            text="Cancel Run",
+            fg_color=STATUS_ERROR,
+            hover_color="#990000",
+            text_color="#FFFFFF",
+            height=36,
+            width=110,
+            command=cancel_work,
+        )
+        self.optuna_cancel_btn.pack(side="left")
         
-        self.app_state.reset_optuna_queue(diseases, max_trials=n_trials)
-        self.app_state.add_optuna_log(f"Dataset profile: {self.app_state.dataset_profile}")
-        self.app_state.add_optuna_log(f"Evaluation mode: {self.app_state.evaluation_mode}")
-        self.app_state.add_optuna_log(f"Optimization queue: {', '.join(diseases)}")
+        self.app_state.reset_optuna_queue(jobs, max_trials=n_trials)
+        self.app_state.add_optuna_log(
+            f"Seed profile: {get_dataset_profile_label(self.app_state.dataset_profile)}"
+        )
+        self.app_state.add_optuna_log(
+            f"Validation reference: {get_evaluation_mode_label(self.app_state.evaluation_mode)}"
+        )
+        self.app_state.add_optuna_log(
+            "Optimization queue: "
+            + ", ".join(f"{job['disease']} / {ablation_label(job['ablation_mode'])}" for job in jobs)
+        )
         self._schedule_optuna_heartbeat()
         
         def bg_run():
             try:
-                for index, disease in enumerate(diseases, start=1):
+                for index, job in enumerate(jobs, start=1):
+                    while self.app_state.pause_event.is_set():
+                        if self.app_state.cancel_event.is_set():
+                            raise InterruptedError("Task cancelled by user.")
+                        time.sleep(0.2)
                     if self.app_state.cancel_event.is_set():
                         raise InterruptedError("Task cancelled by user.")
-                    self.app_state.set_optuna_current_disease(disease, diseases[index:])
-                    self.app_state.add_optuna_log(f"Running optimization for {disease}. Remaining queue: {', '.join(diseases[index:]) or 'none'}")
+                    disease = job["disease"]
+                    ablation_mode = job["ablation_mode"]
+                    ablation_name = ablation_label(ablation_mode)
+                    self.app_state.set_optuna_current_disease(disease, jobs[index:], ablation_mode=ablation_mode)
+                    remaining = ", ".join(
+                        f"{item['disease']} / {ablation_label(item['ablation_mode'])}"
+                        for item in jobs[index:]
+                    )
+                    self.app_state.add_optuna_log(
+                        f"Running optimization for {disease} / {ablation_name}. Remaining queue: {remaining or 'none'}"
+                    )
                     file_map = self._file_map_for_disease(disease)
 
-                    def disease_callback(progress, status_text, disease=disease, index=index):
-                        combined = ((index - 1) + progress) / max(len(diseases), 1)
-                        self.async_optuna_update(combined, f"[{index}/{len(diseases)}] {disease}: {status_text}")
+                    def disease_callback(progress, status_text, disease=disease, ablation_name=ablation_name, index=index):
+                        combined = ((index - 1) + progress) / max(len(jobs), 1)
+                        self.async_optuna_update(
+                            combined,
+                            f"[{index}/{len(jobs)}] {disease} / {ablation_name}: {status_text}",
+                        )
 
                     result = self.service.run_optuna_tuning(
                         disease,
@@ -469,15 +608,18 @@ class BioRankApp(ctk.CTk):
                         seed,
                         disease_callback,
                         self.app_state.cancel_event,
+                        pause_event=self.app_state.pause_event,
+                        ablation_mode=ablation_mode,
                     )
                     self.app_state.add_optuna_disease_summary(
                         disease,
                         result.output_dir,
                         list(self.app_state.optuna_comparison),
+                        ablation_mode=ablation_mode,
                     )
-                    self.app_state.add_optuna_log(f"Completed optimization for {disease}.")
+                    self.app_state.add_optuna_log(f"Completed optimization for {disease} / {ablation_name}.")
                 self.app_state.set_optuna_current_disease("", [])
-                self.after(0, lambda: self.async_optuna_completed(len(diseases)))
+                self.after(0, lambda: self.async_optuna_completed(len(jobs)))
             except InterruptedError as ie:
                 message = str(ie)
                 self.after(0, lambda message=message: self.async_optuna_cancelled(message))
@@ -496,31 +638,47 @@ class BioRankApp(ctk.CTk):
             self.app_state.evaluation_mode,
         )
 
-    def _missing_profile_files(self, diseases):
+    def _missing_profile_files(self, diseases, ablation_modes=None):
         missing = {}
+        ablation_modes = list(ablation_modes or [ABLATION_MODE_FULL])
+        state_to_backend = {
+            "ppi": "ppi_file_path",
+            "coexpression": "co_expression_file_path",
+            "seed": "seed_file_path",
+            "de_genes": "secondary_seed_file_path",
+            "ontology_map": "map__gene__ontologies_file_path",
+            "disease_ontology": "disease_ontology_file_path",
+        }
+        labels_by_backend = {
+            "ppi_file_path": "PPI network",
+            "co_expression_file_path": "co-expression network",
+            "seed_file_path": "seed set",
+            "secondary_seed_file_path": "DE genes",
+            "map__gene__ontologies_file_path": "gene-ontology mapping",
+            "disease_ontology_file_path": "disease ontology",
+        }
         for disease in dict.fromkeys(diseases):
             file_map = self._file_map_for_disease(disease)
-            labels = []
-            if not file_map.get("seed") or not os.path.isfile(file_map["seed"]):
-                labels.append("seed set")
-            if not file_map.get("disease_ontology") or not os.path.isfile(file_map["disease_ontology"]):
-                labels.append("disease ontology")
-            validation_path = get_validation_reference_path(
-                disease,
-                self.app_state.dataset_profile,
-                self.app_state.evaluation_mode,
-            )
+            labels = set()
+            for ablation_mode in ablation_modes:
+                backend_keys = required_input_keys(ablation_mode)
+                for state_key, backend_key in state_to_backend.items():
+                    if backend_key not in backend_keys:
+                        continue
+                    if not file_map.get(state_key) or not os.path.isfile(file_map[state_key]):
+                        labels.add(f"{labels_by_backend[backend_key]} ({ablation_label(ablation_mode)})")
+            validation_path = self.app_state.validation_path_for(disease)
             if not validation_path or not os.path.isfile(validation_path):
-                labels.append("evaluation reference")
+                labels.add(f"{get_evaluation_mode_label(self.app_state.evaluation_mode)} validation reference")
             if labels:
-                missing[disease] = labels
+                missing[disease] = sorted(labels)
         return missing
 
     def _format_missing_profile_message(self, missing):
         details = "\n".join(f"- {disease}: {', '.join(labels)}" for disease, labels in missing.items())
         return (
-            f"{self.app_state.dataset_profile} / {self.app_state.evaluation_mode} "
-            f"is missing required files:\n{details}"
+            f"{get_dataset_profile_label(self.app_state.dataset_profile)} seed profile "
+            f"with {get_evaluation_mode_label(self.app_state.evaluation_mode)} validation is missing required files:\n{details}"
         )
 
     def _schedule_optuna_heartbeat(self):
@@ -529,8 +687,9 @@ class BioRankApp(ctk.CTk):
             return
 
         self.app_state.optuna_elapsed_time = time.perf_counter() - self._optuna_ui_start_time
-        self.views["optimization"].update_view()
-        self._optuna_heartbeat_job = self.after(500, self._schedule_optuna_heartbeat)
+        if self.active_view_key == "optimization":
+            self.views["optimization"].update_view()
+        self._optuna_heartbeat_job = self.after(OPTUNA_HEARTBEAT_MS, self._schedule_optuna_heartbeat)
 
     def _set_optional_optimization_widget_state(self, widget_name, state):
         widget = getattr(self.views["optimization"], widget_name, None)
@@ -575,40 +734,54 @@ class BioRankApp(ctk.CTk):
         self.on_state_updated()
 
     def async_optuna_update(self, progress, status_text):
-        self.after(0, lambda: self._handle_optuna_progress(progress, status_text))
+        self._pending_optuna_update = (progress, status_text)
+        if self._optuna_update_job is None:
+            self._optuna_update_job = self.after(OPTUNA_UI_UPDATE_DELAY_MS, self._flush_optuna_update)
+
+    def _flush_optuna_update(self):
+        self._optuna_update_job = None
+        pending = self._pending_optuna_update
+        self._pending_optuna_update = None
+        if pending is not None:
+            self._handle_optuna_progress(*pending)
         
     def _handle_optuna_progress(self, progress, status_text):
         self.app_state.progress_percentage = progress
         self.app_state.progress_text = status_text
         self.header_status_lbl.configure(text=f"| Status: {status_text}")
-        self.views["optimization"].update_view()
+        if self.active_view_key == "optimization":
+            self.views["optimization"].update_view()
         
     def async_optuna_completed(self, disease_count=1):
+        self._clear_pending_optuna_update()
         self.app_state.is_running = False
+        self.app_state.pause_event.clear()
+        self.app_state.optuna_is_paused = False
         self._optuna_ui_start_time = None
         self.app_state.set_optuna_current_disease("", [])
-        if hasattr(self, "optuna_cancel_btn") and self.optuna_cancel_btn.winfo_exists():
-            self.optuna_cancel_btn.destroy()
+        self._destroy_optuna_action_controls()
         
-        self.views["optimization"].run_btn.configure(state="normal", text="Start Optuna Engine")
+        self.views["optimization"].run_btn.configure(state="normal", text="Start Optimization")
         self.views["optimization"].trials_entry.configure(state="normal")
         self.views["optimization"].seed_entry.configure(state="normal")
         self._set_optional_optimization_widget_state("balance_cb", "normal")
         
-        self.header_status_lbl.configure(text=f"| Status: Optuna search completed successfully for {disease_count} disease(s).")
+        self.header_status_lbl.configure(text=f"| Status: Optuna search completed successfully for {disease_count} job(s).")
         self.views["optimization"].update_view()
         
     def async_optuna_cancelled(self, msg):
+        self._clear_pending_optuna_update()
         self.app_state.is_running = False
+        self.app_state.pause_event.clear()
+        self.app_state.optuna_is_paused = False
         self._optuna_ui_start_time = None
         self.app_state.optuna_phase = "cancelled"
         self.app_state.optuna_status_text = msg
         self.app_state.set_optuna_current_disease("", [])
         self.app_state.add_optuna_log(msg)
-        if hasattr(self, "optuna_cancel_btn") and self.optuna_cancel_btn.winfo_exists():
-            self.optuna_cancel_btn.destroy()
+        self._destroy_optuna_action_controls()
         
-        self.views["optimization"].run_btn.configure(state="normal", text="Start Optuna Engine")
+        self.views["optimization"].run_btn.configure(state="normal", text="Start Optimization")
         self.views["optimization"].trials_entry.configure(state="normal")
         self.views["optimization"].seed_entry.configure(state="normal")
         self._set_optional_optimization_widget_state("balance_cb", "normal")
@@ -617,16 +790,18 @@ class BioRankApp(ctk.CTk):
         self.views["optimization"].update_view()
         
     def async_optuna_failed(self, msg):
+        self._clear_pending_optuna_update()
         self.app_state.is_running = False
+        self.app_state.pause_event.clear()
+        self.app_state.optuna_is_paused = False
         self._optuna_ui_start_time = None
         self.app_state.optuna_phase = "failed"
         self.app_state.optuna_status_text = msg
         self.app_state.set_optuna_current_disease("", [])
         self.app_state.add_optuna_log(f"ERROR: {msg}")
-        if hasattr(self, "optuna_cancel_btn") and self.optuna_cancel_btn.winfo_exists():
-            self.optuna_cancel_btn.destroy()
+        self._destroy_optuna_action_controls()
         
-        self.views["optimization"].run_btn.configure(state="normal", text="Start Optuna Engine")
+        self.views["optimization"].run_btn.configure(state="normal", text="Start Optimization")
         self.views["optimization"].trials_entry.configure(state="normal")
         self.views["optimization"].seed_entry.configure(state="normal")
         self._set_optional_optimization_widget_state("balance_cb", "normal")
@@ -635,11 +810,29 @@ class BioRankApp(ctk.CTk):
         messagebox.showerror("Optuna Error Exception", msg)
         self.views["optimization"].update_view()
 
+    def _destroy_optuna_action_controls(self):
+        frame = getattr(self, "optuna_action_frame", None)
+        if frame is not None and frame.winfo_exists():
+            frame.destroy()
+
+    def _clear_pending_optuna_update(self):
+        if self._optuna_update_job is not None:
+            self.after_cancel(self._optuna_update_job)
+        self._optuna_update_job = None
+        self._pending_optuna_update = None
+
     def on_state_updated(self):
-        for view in self.views.values():
-            if view.winfo_viewable():
-                if hasattr(view, "update_view"):
-                    view.update_view()
+        if hasattr(self, "dataset_profile_combo"):
+            self.dataset_profile_combo.set(
+                get_dataset_profile_label(self.app_state.dataset_profile)
+            )
+        if hasattr(self, "validation_reference_combo"):
+            self.validation_reference_combo.set(
+                get_evaluation_mode_label(self.app_state.evaluation_mode)
+            )
+        view = self.views.get(self.active_view_key)
+        if view is not None and hasattr(view, "update_view"):
+            view.update_view()
                     
     def open_preview_window(self):
         if not self.app_state.preview_nodes:

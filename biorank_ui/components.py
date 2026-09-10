@@ -7,10 +7,19 @@ from biorank_ui.theme import (
     FONT_FAMILY_HEADER, FONT_FAMILY_BODY
 )
 
+
+def compact_parent_path(path, max_length=52):
+    parent = os.path.dirname(os.path.normpath(path))
+    if len(parent) <= max_length:
+        return parent
+    return "..." + parent[-(max_length - 3):]
+
+
 class DataTable(ctk.CTkFrame):
     def __init__(self, master, columns, column_widths=None, **kwargs):
         super().__init__(master, fg_color="#FFFFFF", border_color=BORDER, border_width=1, corner_radius=8, **kwargs)
         self.columns = columns
+        self._insert_generation = 0
         
         self.grid_rowconfigure(0, weight=1)
         self.grid_columnconfigure(0, weight=1)
@@ -63,12 +72,32 @@ class DataTable(ctk.CTkFrame):
         self.tree.tag_configure("oncokb_hit", background="#E8F5E9", foreground="#2E7D32")
         
     def clear(self):
-        for item in self.tree.get_children():
-            self.tree.delete(item)
+        self._insert_generation += 1
+        children = self.tree.get_children()
+        if children:
+            self.tree.delete(*children)
             
     def insert_rows(self, rows_data):
-        self.clear()
-        for idx, row in enumerate(rows_data):
+        self._insert_generation += 1
+        generation = self._insert_generation
+        children = self.tree.get_children()
+        if children:
+            self.tree.delete(*children)
+        rows = list(rows_data)
+
+        def insert_chunk(start):
+            if generation != self._insert_generation:
+                return
+            stop = min(start + 250, len(rows))
+            for idx in range(start, stop):
+                row = rows[idx]
+                self._insert_row(idx, row)
+            if stop < len(rows):
+                self.after_idle(lambda: insert_chunk(stop))
+
+        insert_chunk(0)
+
+    def _insert_row(self, idx, row):
             is_hit = False
             if len(row) >= 5 and (row[4] is True or row[4] == "Yes"):
                 is_hit = True
@@ -82,18 +111,46 @@ class DatasetCard(ctk.CTkFrame):
         super().__init__(master, fg_color=CARD_BG, border_color=BORDER, border_width=1, corner_radius=8, **kwargs)
         self.key = key
         self.browse_callback = browse_callback
-        
+
         self.top_frame = ctk.CTkFrame(self, fg_color="transparent")
         self.top_frame.pack(fill="x", padx=14, pady=(14, 6))
-        
-        self.title_label = ctk.CTkLabel(self.top_frame, text=title, font=(FONT_FAMILY_HEADER, 15), text_color=TEXT_MAIN, anchor="w")
-        self.title_label.pack(side="left")
-        
+        self.top_frame.grid_columnconfigure(0, weight=1)
+
+        self.title_label = ctk.CTkLabel(
+            self.top_frame,
+            text=title,
+            font=(FONT_FAMILY_HEADER, 14),
+            text_color=TEXT_MAIN,
+            anchor="w",
+            justify="left",
+            wraplength=220,
+        )
+        self.title_label.grid(row=0, column=0, sticky="w")
+
         self.status_badge = ctk.CTkLabel(self.top_frame, text="", font=(FONT_FAMILY_HEADER, 12, "bold"), corner_radius=4, padx=8, pady=3)
-        self.status_badge.pack(side="right")
-        
-        self.path_label = ctk.CTkLabel(self, text="", font=(FONT_FAMILY_BODY, 13), text_color=TEXT_MUTED, anchor="w")
-        self.path_label.pack(fill="x", padx=14, pady=(0, 10))
+        self.status_badge.grid(row=0, column=1, padx=(8, 0), sticky="ne")
+
+        self.path_label = ctk.CTkLabel(
+            self,
+            text="",
+            font=(FONT_FAMILY_BODY, 13, "bold"),
+            text_color=TEXT_MAIN,
+            anchor="w",
+            justify="left",
+            wraplength=280,
+        )
+        self.path_label.pack(fill="x", padx=14, pady=(0, 2))
+
+        self.parent_path_label = ctk.CTkLabel(
+            self,
+            text="",
+            font=(FONT_FAMILY_BODY, 11),
+            text_color=TEXT_MUTED,
+            anchor="w",
+            justify="left",
+            wraplength=280,
+        )
+        self.parent_path_label.pack(fill="x", padx=14, pady=(0, 10))
         
         self.browse_btn = ctk.CTkButton(self, text="Browse", font=(FONT_FAMILY_HEADER, 13, "bold"),
                                        fg_color=SOFT_BLUE, text_color=PRIMARY, hover_color=BORDER,
@@ -104,12 +161,13 @@ class DatasetCard(ctk.CTkFrame):
         
     def update_state(self, path, status):
         if not path:
-            display_path = "Browse dataset manually..."
+            display_name = "No file selected"
+            display_parent = "Choose a file to configure this input."
         else:
-            display_path = os.path.basename(path)
-            if len(display_path) > 28:
-                display_path = display_path[:25] + "..."
-        self.path_label.configure(text=display_path)
+            display_name = os.path.basename(os.path.normpath(path))
+            display_parent = f"Folder: {compact_parent_path(path)}"
+        self.path_label.configure(text=display_name)
+        self.parent_path_label.configure(text=display_parent)
         
         if status == "Ready":
             self.status_badge.configure(text="Ready", fg_color="#E8F5E9", text_color=STATUS_READY)
