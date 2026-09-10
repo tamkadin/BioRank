@@ -7,21 +7,65 @@ from biorank_ui import theme
 
 APP_TITLE = "BioRank - Cancer Gene Prioritization"
 REPO_ROOT = Path(__file__).resolve().parents[1]
+DATASET_DIR_ENV_VAR = "BIORANK_DATA_DIR"
+DATASET_LAYOUT_MARKERS = (
+    "ppi_network",
+    "seed_set",
+    "co-expression_networks",
+    "ontology_network",
+    "disease_specific_ontologies",
+)
 
 
 def repo_path(*parts):
     return str(REPO_ROOT.joinpath(*parts))
 
 
+def _dataset_layout_score(path):
+    return sum((path / marker).is_dir() for marker in DATASET_LAYOUT_MARKERS)
+
+
+def resolve_dataset_dir(repo_root=REPO_ROOT, environ=None):
+    repo_root = Path(repo_root).resolve()
+    environ = os.environ if environ is None else environ
+
+    configured_path = str(environ.get(DATASET_DIR_ENV_VAR, "")).strip()
+    if configured_path:
+        configured = Path(configured_path).expanduser()
+        if not configured.is_absolute():
+            configured = repo_root / configured
+        return configured.resolve()
+
+    conventional = repo_root / "data_set"
+    if conventional.is_dir():
+        return conventional.resolve()
+
+    try:
+        candidates = [
+            child.resolve()
+            for child in repo_root.iterdir()
+            if child.is_dir() and _dataset_layout_score(child) >= 3
+        ]
+    except OSError:
+        candidates = []
+
+    if len(candidates) == 1:
+        return candidates[0]
+    return conventional.resolve()
+
+
+DATASET_ROOT = resolve_dataset_dir()
+
+
 def dataset_path(*parts):
-    return repo_path("data_set", *parts)
+    return str(DATASET_ROOT.joinpath(*parts))
 
 
 def output_path(*parts):
     return repo_path("output", *parts)
 
 
-DATASET_DIR = dataset_path()
+DATASET_DIR = str(DATASET_ROOT)
 OUTPUT_DIR = output_path()
 PREVIEW_NODE_LIMIT = 1000
 PREVIEW_EDGE_LIMIT = 2000
@@ -59,10 +103,29 @@ COLORS = {
 
 DISEASES = ("BLCA", "BRCA", "COAD", "LUAD", "PRAD", "STAD", "THCA")
 DATASET_PROFILE_DEFAULT = "Dataset"
-DATASET_PROFILE_NEW = "Dataset New"
+DATASET_PROFILE_NEW = "Seed Enrichment"
 DATASET_PROFILES = (DATASET_PROFILE_DEFAULT, DATASET_PROFILE_NEW)
+DATASET_PROFILE_LABELS = {
+    DATASET_PROFILE_DEFAULT: "Original",
+    DATASET_PROFILE_NEW: "Enriched",
+}
+SEED_PROFILE_LABELS = tuple(DATASET_PROFILE_LABELS[profile] for profile in DATASET_PROFILES)
+DATASET_PROFILE_BY_LABEL = {
+    label: profile for profile, label in DATASET_PROFILE_LABELS.items()
+}
 EVALUATION_MODE_ONCOKB = "OncoKB"
-EVALUATION_MODES = (EVALUATION_MODE_ONCOKB,)
+EVALUATION_MODE_DISEASE_ONCOKB = "Disease OncoKB"
+EVALUATION_MODES = (EVALUATION_MODE_ONCOKB, EVALUATION_MODE_DISEASE_ONCOKB)
+EVALUATION_MODE_LABELS = {
+    EVALUATION_MODE_ONCOKB: "Pan-cancer OncoKB",
+    EVALUATION_MODE_DISEASE_ONCOKB: "Cancer-specific OncoKB",
+}
+EVALUATION_MODE_DISPLAY_LABELS = tuple(
+    EVALUATION_MODE_LABELS[mode] for mode in EVALUATION_MODES
+)
+EVALUATION_MODE_BY_LABEL = {
+    label: mode for mode, label in EVALUATION_MODE_LABELS.items()
+}
 
 ALGORITHM_ORIGINAL_PAGERANK = "pagerank"
 ALGORITHM_BIORANK = "biorank"
@@ -175,6 +238,22 @@ def get_algorithm_slug(value):
     return ALGORITHM_BY_LABEL.get(value, value)
 
 
+def get_dataset_profile_label(dataset_profile):
+    return DATASET_PROFILE_LABELS.get(dataset_profile, dataset_profile)
+
+
+def get_dataset_profile_value(display_label):
+    return DATASET_PROFILE_BY_LABEL.get(display_label, display_label)
+
+
+def get_evaluation_mode_label(evaluation_mode):
+    return EVALUATION_MODE_LABELS.get(evaluation_mode, evaluation_mode)
+
+
+def get_evaluation_mode_value(display_label):
+    return EVALUATION_MODE_BY_LABEL.get(display_label, display_label)
+
+
 def state_file_paths_to_backend(file_paths):
     return {
         backend_key: file_paths.get(state_key, "")
@@ -237,14 +316,30 @@ def build_default_biorank_inputs(
     }
     if dataset_profile == DATASET_PROFILE_NEW:
         inputs["seed_file_path"] = find_first(
-            [dataset_path("seed_set", "New", f"{tcga}_seed.txt")]
+            [
+                dataset_path("seed_set", "New", f"{tcga}_seed.txt"),
+                dataset_path("seed_set", "New", f"{tcga}*_seed.*"),
+                dataset_path("seed_set", "Enriched", f"{tcga}*_seed.*"),
+                dataset_path("seed_set", "Enrichment", f"{tcga}*_seed.*"),
+                dataset_path("seed_set", "*", f"{tcga}*_seed.txt"),
+                dataset_path("seed_set", "*", f"{tcga}*_seed.tsv"),
+                dataset_path("seed_set", "*", f"{tcga}*_seed.*"),
+            ]
         )
         inputs["disease_ontology_file_path"] = find_first(
             [
                 dataset_path(
                     "disease_specific_ontologies",
                     f"{tcga}_disease_ontologies_new_22_6.txt",
-                )
+                ),
+                dataset_path(
+                    "disease_specific_ontologies",
+                    f"{tcga}*ontolog*new*.txt",
+                ),
+                dataset_path(
+                    "disease_specific_ontologies",
+                    f"{tcga}*ontolog*enrich*.txt",
+                ),
             ]
         )
     return inputs
@@ -255,4 +350,13 @@ def get_validation_reference_path(disease, dataset_profile, evaluation_mode):
         raise ValueError(f"Unknown dataset profile: {dataset_profile}")
     if evaluation_mode not in EVALUATION_MODES:
         raise ValueError(f"Unknown evaluation mode: {evaluation_mode}")
+    if evaluation_mode == EVALUATION_MODE_DISEASE_ONCOKB:
+        return find_first(
+            [
+                dataset_path(f"Onco_KB_{disease}.csv"),
+                dataset_path(f"Onco_KB {disease}.csv"),
+                dataset_path("seed_set", "New", f"Onco_KB_{disease}.csv"),
+                dataset_path("seed_set", "New", f"Onco_KB {disease}.csv"),
+            ]
+        )
     return ONCOKB_PATH

@@ -95,7 +95,7 @@ If PySide6 installation fails and you only need the main app, first confirm whet
 
 ## 5. Verify Data Layout
 
-BioRank v2 expects the input dataset under `data_set/`.
+BioRank v2 uses `data_set/` as the recommended input directory name.
 
 The dataset is large, so it is not uploaded directly to git. Download it from:
 
@@ -103,7 +103,7 @@ The dataset is large, so it is not uploaded directly to git. Download it from:
 https://drive.google.com/drive/folders/11TY1KGRpxG2VzStKO1rb5NjBtcNClysP?usp=sharing
 ```
 
-After downloading or extracting the dataset, rename the folder to exactly:
+After downloading or extracting the dataset, the recommended folder name is:
 
 ```text
 data_set
@@ -117,7 +117,10 @@ BioRank/
   data_set/
 ```
 
-The name must be `data_set` because the app auto-detects inputs from that folder.
+The app first checks `data_set/`. If that directory is absent, it can detect one
+renamed direct child directory from the expected BioRank subdirectory layout.
+For data stored elsewhere, set `BIORANK_DATA_DIR` to an absolute or
+repository-relative path before starting the app.
 
 Minimum ranking input layout:
 
@@ -131,9 +134,11 @@ data_set/ontology_network/ontology_network.tsv
 data_set/disease_specific_ontologies/TCGA-<DISEASE>*disease_ontologies.txt
 data_set/mart_biotool.txt
 data_set/Onco_KB.csv
+data_set/Onco_KB_<DISEASE>.csv
+data_set/Onco_KB <DISEASE>.csv
 ```
 
-Dataset New uses:
+The `Enriched` seed profile uses:
 
 ```text
 data_set/seed_set/New/TCGA-<DISEASE>_seed.txt
@@ -148,7 +153,11 @@ BLCA, BRCA, COAD, LUAD, PRAD, STAD, THCA
 
 Current behavior:
 
-- Evaluation mode is `OncoKB`.
+- `Pan-cancer OncoKB` uses `data_set/Onco_KB.csv` for every disease.
+- `Cancer-specific OncoKB` uses a per-disease validation file when selected.
+  The app detects `data_set/Onco_KB_<DISEASE>.csv`,
+  `data_set/Onco_KB <DISEASE>.csv`, and matching files under
+  `data_set/seed_set/New/`.
 - The app uses full seed files.
 - The app does not split seed genes into train/test sets.
 
@@ -186,32 +195,36 @@ BioRank: Cancer Gene Prioritization Workspace
 Main screens:
 
 ```text
-1. Input Data Configuration
+1. Input Data Readiness
 2. Data Preprocessing
-3. Priority Gene Ranking
+3. Cancer Gene Ranking
 4. Parameter Optimization
 ```
 
 ## 8. Run a Ranking Experiment
 
-1. Open `Input Data Configuration`.
+1. Open `Input Data Readiness`.
 2. Select the disease code in the header.
-3. Select dataset profile:
-   - `Dataset`: default seed and disease ontology.
-   - `Dataset New`: new seed and new disease ontology.
-4. Confirm all six BioRank inputs are `Ready`.
-5. Open `Priority Gene Ranking`.
-6. Select algorithm:
+3. Select the seed profile:
+   - `Original`: original seed set and disease ontology.
+   - `Enriched`: enriched seed set and corresponding disease ontology.
+4. Select the validation set:
+   - `Pan-cancer OncoKB`: shared reference file for all diseases.
+   - `Cancer-specific OncoKB`: disease-specific reference file.
+5. Confirm all six BioRank inputs and the `Validation Reference` card are
+   `Ready`.
+6. Open `Cancer Gene Ranking`.
+7. Select algorithm:
    - `Original PageRank`
    - `BRWR Lite`
    - `BRWR`
    - `BioRank Lite`
    - `BioRank`
-7. Set `Alpha` and `Beta`.
-8. Click `Build Network`.
-9. Inspect the network preview if needed.
-10. Click `Run Algorithm`.
-11. Review ranking rows and OncoKB metrics in the Results tab.
+8. Set `Alpha` and `Beta`.
+9. Click `Build Network`.
+10. Inspect the network preview if needed.
+11. Click `Run Algorithm`.
+12. Review ranking rows and validation metrics in the Results tab.
 
 Single-run outputs:
 
@@ -232,7 +245,7 @@ Rank<TAB>GeneNames<TAB>GeneSymbol<TAB>Score<TAB>OncoKBHit
 
 ## 9. Run Batch Ranking
 
-1. Open `Priority Gene Ranking`.
+1. Open `Cancer Gene Ranking`.
 2. Use the batch queue section.
 3. Select a disease.
 4. Enter one alpha,beta pair per line, for example:
@@ -248,6 +261,8 @@ Rank<TAB>GeneNames<TAB>GeneSymbol<TAB>Score<TAB>OncoKBHit
 7. Start batch ranking.
 
 Batch ranking runs sequentially to avoid overloading memory and CPU.
+When `Cancer-specific OncoKB` is selected, each disease in the batch uses its
+own validation reference file.
 
 Batch outputs:
 
@@ -261,13 +276,39 @@ Each batch folder includes ranking TSV files, integrated network TSV files, and 
 
 From the main app:
 
-1. Select disease and dataset profile in the header.
+1. Select the cancer type, seed profile, and validation set in the header.
 2. Open `Parameter Optimization`.
 3. Choose `Single Disease` or `Batch Queue`.
 4. Set:
    - number of trials;
    - random seed.
-5. Click `Start Optuna Engine`.
+5. Select ablation cases:
+   - `BioRank v2 full`;
+   - `BioRank v2 without DE genes`;
+   - `BioRank v2 without co-expression`;
+   - `BioRank v2 without annotation`.
+6. Click `Start Optimization`.
+
+When `Cancer-specific OncoKB` is selected, single-disease optimization uses
+the selected disease reference file, and batch optimization resolves a separate
+validation file for each disease in the queue.
+
+While optimization is running:
+
+- `Pause` requests a safe pause at the next optimizer checkpoint. Wait until
+  the status changes to `paused` before putting the computer to sleep.
+- `Resume` continues the same in-memory run and the same SQLite Optuna study
+  after the computer wakes up.
+- `Cancel Run` stops the queue. Pause/resume does not support closing and
+  reopening the application.
+
+The live comparison and disease summary tables use a native row-based table
+and render only the active result tab. UI progress events are coalesced, so a
+running optimizer does not rebuild hidden tables on every backend update. A
+trailing `*` marks a best metric value. No additional result database is
+required: Optuna keeps study data in SQLite, while the UI reads its current
+run snapshot from application state. This uses only bundled Python/Tk
+components and remains compatible with desktop packaging.
 
 Default settings:
 
@@ -278,6 +319,31 @@ alpha range = 0.0..1.0
 beta range = 0.0..1.0
 objectives = nDCG@100, Recall@100, Common@100
 ```
+
+The ablation cases change only the evidence sources used by the BioRank v2
+pipeline:
+
+- `BioRank v2 full`: biological personalization, topological/DE personalization, PPI annotation weighting, and PPI + co-expression aggregation.
+- `BioRank v2 without DE genes`: removes the topological/DE personalization vector; Optuna optimizes only beta and reports alpha as N/A.
+- `BioRank v2 without co-expression`: uses only the PPI network for matrix aggregation; Optuna optimizes only alpha and reports beta as N/A.
+- `BioRank v2 without annotation`: removes biological/ontology personalization and disables PPI annotation weighting; Optuna optimizes only beta and reports alpha as N/A.
+
+Inactive parameters are not included in the Optuna search space. Internally,
+the limiting values are alpha=1 for `without DE genes`, beta=1 for `without
+co-expression`, and alpha=0 for `without annotation`. When an ablation leaves
+only one personalization vector, that vector is normalized directly rather
+than combined through alpha.
+
+For performance, each Optuna run uses a cached sparse BioRank Lite execution
+path for trial evaluation. Within the same disease/case batch it loads inputs,
+applies ontology PPI weighting when enabled, normalizes PPI/co-expression
+components, and creates personalization vectors once, then each trial only
+combines the cached sparse matrices by beta and runs the same BioRank Lite
+power iteration. This does not change the alpha/beta formula, convergence
+threshold, maximum iteration count, or evaluation metrics; it avoids
+recomputing identical NetworkX graph construction steps across trials.
+Trial history is appended incrementally, and full ranking lists are generated
+only for the selected candidates instead of being retained for every trial.
 
 The optimization compares:
 
@@ -290,6 +356,12 @@ Optuna outputs:
 
 ```text
 output/<DISEASE>/optuna_biorank_compare/<YYYYMMDD_HHMMSS>/
+```
+
+With ablation enabled, each run is grouped by case:
+
+```text
+output/<DISEASE>/optuna_biorank_compare/<ABLATION_CASE>/<YYYYMMDD_HHMMSS>/
 ```
 
 Important files:
@@ -307,8 +379,9 @@ rankings/
 For reproducibility, record:
 
 - disease code;
-- dataset profile;
+- seed profile;
 - six input paths;
+- validation set and validation reference path;
 - trial count;
 - random seed;
 - alpha and beta ranges;
@@ -358,9 +431,9 @@ The dialogs allow manual input and output path selection.
 
 ### App opens but inputs are Missing
 
-Check that `data_set/` exists under the repository root and that filenames match the expected disease code.
+Check that the detected data directory contains the expected BioRank subdirectories and that filenames match the disease code. Set `BIORANK_DATA_DIR` if auto-detection is ambiguous.
 
-For `Dataset New`, only diseases with both new seed and new disease ontology files will be ready.
+For the `Enriched` seed profile, only diseases with both an enriched seed file and matching enriched disease ontology file will be ready.
 
 ### PowerShell cannot activate the virtual environment
 
@@ -386,6 +459,18 @@ python main.py
 
 The standalone Qt optimizer is optional for the main workflow.
 
+### Build a Desktop App
+
+The repository keeps `data_set/` external so packaged builds stay small and
+can reuse the same downloaded dataset folder. From an activated environment:
+
+```powershell
+python -m PyInstaller --noconfirm --windowed --name BioRank --icon icon.ico --collect-data customtkinter main.py
+```
+
+After building, place or keep `data_set/` next to the executable working
+directory, or use the app's browse controls to select the dataset files.
+
 ### Ranking fails with missing columns
 
 Most BioRank input files are TSV files. Check that:
@@ -409,7 +494,7 @@ This folder is ignored by git. Archive or clean old output folders manually when
 
 ## 14. Maintainer Notes
 
-- Keep code paths relative to the repository root.
+- Keep code paths relative to the repository root or resolve them through `BIORANK_DATA_DIR`.
 - Do not hard-code user-specific absolute paths.
 - Do not change input/output schemas unless the pipeline documentation is updated.
 - Follow `docs/AGENT_RULES.md` before changing code.

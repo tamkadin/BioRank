@@ -9,6 +9,11 @@ from biorank_ui.config import (
     EVALUATION_MODE_ONCOKB,
     EVALUATION_MODES,
     build_default_state_file_paths,
+    get_validation_reference_path,
+)
+from BioRank.optimization.ablation_config import (
+    ABLATION_MODE_FULL,
+    ablation_label,
 )
 
 
@@ -48,6 +53,9 @@ class AppState:
         self.current_disease = "BRCA"
         self.dataset_profile = DATASET_PROFILE_DEFAULT
         self.evaluation_mode = EVALUATION_MODE_ONCOKB
+        self.validation_file_path = ""
+        self.validation_file_status = "Missing"
+        self.validation_file_overrides = {}
         self.selected_algorithm = "BioRank Lite"
         self.alpha = 0.20
         self.beta = 0.20
@@ -61,6 +69,7 @@ class AppState:
         self.progress_percentage = 0.0
         self.progress_text = "Ready"
         self.cancel_event = threading.Event()
+        self.pause_event = threading.Event()
         
         # Prioritization & Aggregate Network Results
         self.network_summary = {"nodes": 0, "edges": 0}
@@ -83,7 +92,9 @@ class AppState:
         self.optuna_elapsed_time = 0.0
         self.optuna_status_text = "Idle"
         self.optuna_phase = "idle"
+        self.optuna_is_paused = False
         self.optuna_logs = []
+        self._last_optuna_log_message = None
         self.optuna_baselines = {
             "pagerank": "pending",
             "random_walk": "pending",
@@ -92,6 +103,7 @@ class AppState:
         self.optuna_comparison = []  # comparison table rows
         self.optuna_balanced_candidates = False
         self.optuna_current_disease = ""
+        self.optuna_current_ablation = ABLATION_MODE_FULL
         self.optuna_disease_queue = []
         self.optuna_completed_diseases = []
         self.optuna_disease_summary = []
@@ -125,6 +137,8 @@ class AppState:
         self.kpi_metrics = default_kpi_metrics()
 
     def reset_optuna(self, max_trials=None):
+        self.pause_event.clear()
+        self.optuna_is_paused = False
         self.optuna_trials = []
         self.optuna_current_trial = 0
         if max_trials is not None:
@@ -133,6 +147,7 @@ class AppState:
         self.optuna_status_text = "Starting optimization..."
         self.optuna_phase = "starting"
         self.optuna_logs = []
+        self._last_optuna_log_message = None
         self.optuna_baselines = {
             "pagerank": "pending",
             "random_walk": "pending",
@@ -140,21 +155,32 @@ class AppState:
         }
         self.optuna_comparison = []
 
-    def reset_optuna_queue(self, diseases, max_trials=None):
+    def reset_optuna_queue(self, jobs, max_trials=None):
         self.reset_optuna(max_trials=max_trials)
         self.optuna_current_disease = ""
-        self.optuna_disease_queue = list(diseases)
+        self.optuna_current_ablation = ABLATION_MODE_FULL
+        self.optuna_disease_queue = [self._optuna_job_label(job) for job in jobs]
         self.optuna_completed_diseases = []
         self.optuna_disease_summary = []
 
-    def set_optuna_current_disease(self, disease, remaining_queue):
+    def set_optuna_current_disease(self, disease, remaining_queue, ablation_mode=ABLATION_MODE_FULL):
         self.optuna_current_disease = disease
-        self.optuna_disease_queue = list(remaining_queue)
+        self.optuna_current_ablation = ablation_mode
+        self.optuna_disease_queue = [self._optuna_job_label(job) for job in remaining_queue]
 
-    def add_optuna_disease_summary(self, disease, output_dir, comparison_rows):
+    def add_optuna_disease_summary(
+        self,
+        disease,
+        output_dir,
+        comparison_rows,
+        ablation_mode=ABLATION_MODE_FULL,
+    ):
+        current_ablation_label = ablation_label(ablation_mode)
         if not comparison_rows:
             row = {
                 "disease": disease,
+                "ablation_mode": ablation_mode,
+                "ablation_label": current_ablation_label,
                 "top_choice": "No completed result",
                 "alpha": "",
                 "beta": "",
@@ -176,6 +202,8 @@ class AppState:
             best = max(comparison_rows, key=objective_key)
             row = {
                 "disease": disease,
+                "ablation_mode": ablation_mode,
+                "ablation_label": current_ablation_label,
                 "top_choice": best[0],
                 "alpha": best[1],
                 "beta": best[2],
@@ -188,10 +216,19 @@ class AppState:
                 "output_dir": output_dir,
             }
         self.optuna_disease_summary.append(row)
-        self.optuna_completed_diseases.append(disease)
+        self.optuna_completed_diseases.append(f"{disease} / {current_ablation_label}")
+
+    def _optuna_job_label(self, job):
+        if isinstance(job, dict):
+            return f"{job.get('disease', '')} / {ablation_label(job.get('ablation_mode', ABLATION_MODE_FULL))}"
+        return str(job)
 
     def add_optuna_log(self, message):
-        text = str(message)
+        raw_text = str(message)
+        if raw_text == self._last_optuna_log_message:
+            return
+        self._last_optuna_log_message = raw_text
+        text = raw_text
         if not text.startswith("["):
             text = f"[{datetime.now().strftime('%H:%M:%S')}] {text}"
         self.optuna_logs.append(text)
@@ -242,9 +279,40 @@ class AppState:
         if self.evaluation_mode == evaluation_mode:
             return
         self.evaluation_mode = evaluation_mode
-        self.auto_detect_files()
-        self.reset_network_and_results()
+        self.refresh_validation_file()
+        self.reset_results()
         self.notify_listeners()
+
+    def set_validation_file_path(self, path, disease=None):
+        disease = disease or self.current_disease
+        key = self._validation_override_key(disease, self.evaluation_mode)
+        self.validation_file_overrides[key] = path
+        self.refresh_validation_file()
+        self.reset_results()
+        self.notify_listeners()
+
+    def validation_path_for(self, disease=None, evaluation_mode=None):
+        disease = disease or self.current_disease
+        evaluation_mode = evaluation_mode or self.evaluation_mode
+        override = self.validation_file_overrides.get(
+            self._validation_override_key(disease, evaluation_mode),
+            "",
+        )
+        if override:
+            return override
+        return get_validation_reference_path(disease, self.dataset_profile, evaluation_mode)
+
+    def refresh_validation_file(self):
+        self.validation_file_path = self.validation_path_for(self.current_disease)
+        self.validation_file_status = (
+            "Ready" if self.validation_file_path and os.path.exists(self.validation_file_path) else "Missing"
+        )
+
+    @staticmethod
+    def _validation_override_key(disease, evaluation_mode):
+        if evaluation_mode == EVALUATION_MODE_ONCOKB:
+            return (evaluation_mode, "")
+        return (evaluation_mode, disease)
             
     def auto_detect_files(self):
         defaults = build_default_state_file_paths(
@@ -260,6 +328,7 @@ class AppState:
                 self.file_statuses[state_key] = "Ready"
             else:
                 self.file_statuses[state_key] = "Missing"
+        self.refresh_validation_file()
                 
     def set_file_path(self, key, path):
         if key in self.file_paths:

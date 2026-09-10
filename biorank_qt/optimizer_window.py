@@ -42,11 +42,23 @@ from biorank_ui.config import (
     DEFAULT_OPTUNA_TRIALS,
     DEFAULT_PRECISION_K,
     DEFAULT_RECALL_K,
+    DATASET_PROFILE_DEFAULT,
     DISEASES,
+    EVALUATION_MODE_DISPLAY_LABELS,
+    EVALUATION_MODE_ONCOKB,
     GENE_MAPPING_PATH,
-    ONCOKB_PATH,
     build_default_biorank_inputs,
+    get_evaluation_mode_label,
+    get_evaluation_mode_value,
+    get_validation_reference_path,
     get_optuna_biorank_compare_output_base,
+)
+from BioRank.optimization.ablation_config import (
+    ABLATION_MODE_LABELS,
+    ABLATION_MODE_ORDER,
+    ablation_pipeline_config,
+    ablation_slug,
+    required_input_keys,
 )
 
 
@@ -62,6 +74,7 @@ class BioRankOptimizerWindow(QWidget):
         self.result = None
         self.worker = None
         self.worker_thread = None
+        self.evaluation_mode = EVALUATION_MODE_ONCOKB
 
         self._build_ui()
         self.disease_combo.setCurrentText(selected_disease if selected_disease in DISEASES else "BRCA")
@@ -104,7 +117,11 @@ class BioRankOptimizerWindow(QWidget):
         layout.addWidget(title)
         layout.addWidget(subtitle)
         badges = QHBoxLayout()
-        for text in ("BioRank-only optimization", "OncoKB validation", "Baselines: alpha=beta=0.5"):
+        for text in (
+            "BioRank-only optimization",
+            "Validation set: selectable",
+            "Baselines: alpha=beta=0.5",
+        ):
             badge = QLabel(text)
             badge.setObjectName("Badge")
             badges.addWidget(badge)
@@ -132,6 +149,16 @@ class BioRankOptimizerWindow(QWidget):
         disease_row.addStretch(1)
         layout.addLayout(disease_row)
 
+        validation_row = QHBoxLayout()
+        validation_row.addWidget(QLabel("Validation set"))
+        self.validation_mode_combo = QComboBox()
+        self.validation_mode_combo.addItems(EVALUATION_MODE_DISPLAY_LABELS)
+        self.validation_mode_combo.setCurrentText(get_evaluation_mode_label(self.evaluation_mode))
+        self.validation_mode_combo.currentTextChanged.connect(self._on_validation_mode_changed)
+        validation_row.addWidget(self.validation_mode_combo)
+        validation_row.addStretch(1)
+        layout.addLayout(validation_row)
+
         self.input_status_labels = {}
         status_grid = QGridLayout()
         status_items = [
@@ -141,7 +168,7 @@ class BioRankOptimizerWindow(QWidget):
             ("DE genes", "secondary_seed_file_path"),
             ("Ontology", "map__gene__ontologies_file_path"),
             ("Disease ontology", "disease_ontology_file_path"),
-            ("OncoKB", "oncokb"),
+            ("Validation", "oncokb"),
             ("Gene mapping", "gene_mapping"),
         ]
         for index, (label, key) in enumerate(status_items):
@@ -169,11 +196,16 @@ class BioRankOptimizerWindow(QWidget):
         opt_grid.addWidget(self.trials_spin, 0, 1)
         opt_grid.addWidget(QLabel("Random seed"), 1, 0)
         opt_grid.addWidget(self.seed_spin, 1, 1)
+        self.ablation_combo = QComboBox()
+        for mode in ABLATION_MODE_ORDER:
+            self.ablation_combo.addItem(ABLATION_MODE_LABELS[mode], mode)
+        opt_grid.addWidget(QLabel("Ablation case"), 2, 0)
+        opt_grid.addWidget(self.ablation_combo, 2, 1)
         seed_note = QLabel("Same seed repeats the same Optuna suggestion sequence; change it to explore a different sequence.")
         seed_note.setWordWrap(True)
-        opt_grid.addWidget(seed_note, 2, 0, 1, 2)
-        opt_grid.addWidget(QLabel("Alpha range: 0.0 -> 1.0 inclusive"), 3, 0, 1, 2)
-        opt_grid.addWidget(QLabel("Beta range: 0.0 -> 1.0 inclusive"), 4, 0, 1, 2)
+        opt_grid.addWidget(seed_note, 3, 0, 1, 2)
+        opt_grid.addWidget(QLabel("Alpha range: 0.0 -> 1.0 inclusive"), 4, 0, 1, 2)
+        opt_grid.addWidget(QLabel("Beta range: 0.0 -> 1.0 inclusive"), 5, 0, 1, 2)
         layout.addLayout(opt_grid)
 
         layout.addWidget(self._card_title("Objectives"))
@@ -193,10 +225,14 @@ class BioRankOptimizerWindow(QWidget):
         self.cancel_button.setObjectName("DangerButton")
         self.cancel_button.clicked.connect(self.cancel_optimization)
         self.cancel_button.setEnabled(False)
+        self.pause_button = QPushButton("Pause")
+        self.pause_button.clicked.connect(self.toggle_pause)
+        self.pause_button.setEnabled(False)
         self.run_again_button = QPushButton("Run Again")
         self.run_again_button.clicked.connect(self.start_optimization)
         self.run_again_button.setEnabled(False)
         action_row.addWidget(self.start_button)
+        action_row.addWidget(self.pause_button)
         action_row.addWidget(self.cancel_button)
         action_row.addWidget(self.run_again_button)
         layout.addLayout(action_row)
@@ -292,7 +328,9 @@ class BioRankOptimizerWindow(QWidget):
     def auto_fill_inputs(self):
         disease = self.disease_combo.currentText() if hasattr(self, "disease_combo") else "BRCA"
         self.input_paths = build_default_biorank_inputs(disease)
-        self.oncokb_path = ONCOKB_PATH
+        if hasattr(self, "validation_mode_combo"):
+            self.validation_mode_combo.setCurrentText(get_evaluation_mode_label(self.evaluation_mode))
+        self.oncokb_path = self._default_validation_path(disease)
         self.gene_mapping_path = GENE_MAPPING_PATH
         self.alpha_min = DEFAULT_ALPHA_MIN
         self.alpha_max = DEFAULT_ALPHA_MAX
@@ -304,6 +342,19 @@ class BioRankOptimizerWindow(QWidget):
         self.candidate_selection_mode = DEFAULT_CANDIDATE_SELECTION_MODE
         self.max_selected_candidates = DEFAULT_MAX_SELECTED_CANDIDATES
         self._update_input_status()
+
+    def _on_validation_mode_changed(self, display_label):
+        self.evaluation_mode = get_evaluation_mode_value(display_label)
+        self.oncokb_path = self._default_validation_path()
+        self._update_input_status()
+
+    def _default_validation_path(self, disease=None):
+        disease = disease or self.disease_combo.currentText()
+        return get_validation_reference_path(
+            disease,
+            DATASET_PROFILE_DEFAULT,
+            self.evaluation_mode,
+        )
 
     def _update_input_status(self):
         for key in [item[1] for item in BIORANK_INPUTS]:
@@ -353,24 +404,32 @@ class BioRankOptimizerWindow(QWidget):
         self.worker_thread.finished.connect(self.worker_thread.deleteLater)
 
         self._set_running_state(True)
+        self.pause_button.setText("Pause")
         self.worker_thread.start()
 
     def _build_run_config(self):
-        missing = [label for label, key, _optional in BIORANK_INPUTS if not self.input_paths.get(key) or not os.path.exists(self.input_paths[key])]
+        ablation_mode = self.ablation_combo.currentData()
+        pipeline_config = ablation_pipeline_config(ablation_mode)
+        required_keys = required_input_keys(ablation_mode)
+        missing = [
+            label
+            for label, key, _optional in BIORANK_INPUTS
+            if key in required_keys and (not self.input_paths.get(key) or not os.path.exists(self.input_paths[key]))
+        ]
         if missing:
             raise ValueError(f"Missing input files: {', '.join(missing)}")
         if not os.path.exists(self.oncokb_path):
-            raise ValueError("Missing OncoKB/reference file.")
+            raise ValueError("Missing validation reference file.")
         if not os.path.exists(self.gene_mapping_path):
             raise ValueError("Missing gene mapping file.")
-        if not 0.0 <= self.alpha_min < self.alpha_max <= 1.0:
+        if pipeline_config["alpha_used"] and not 0.0 <= self.alpha_min < self.alpha_max <= 1.0:
             raise ValueError("Alpha range must use inclusive bounds in [0, 1] and satisfy min < max.")
-        if not 0.0 <= self.beta_min < self.beta_max <= 1.0:
+        if pipeline_config["beta_used"] and not 0.0 <= self.beta_min < self.beta_max <= 1.0:
             raise ValueError("Beta range must use inclusive bounds in [0, 1] and satisfy min < max.")
 
         disease = self.disease_combo.currentText()
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = get_optuna_biorank_compare_output_base(disease) / timestamp
+        output_dir = get_optuna_biorank_compare_output_base(disease) / ablation_slug(ablation_mode) / timestamp
         return {
             "cancer_type": disease,
             "input_paths": dict(self.input_paths),
@@ -389,6 +448,7 @@ class BioRankOptimizerWindow(QWidget):
             "prefer_balanced_top5": False,
             "candidate_selection_mode": self.candidate_selection_mode,
             "max_selected_candidates": self.max_selected_candidates,
+            "ablation_mode": ablation_mode,
             "output_dir": str(output_dir),
         }
 
@@ -396,6 +456,8 @@ class BioRankOptimizerWindow(QWidget):
         status = payload.get("status")
         if status:
             self.status_label.setText(status)
+        if payload.get("phase") == "paused":
+            self.pause_button.setText("Resume")
         trial_number = payload.get("trial_number")
         if trial_number is not None:
             current = min(int(trial_number) + 1, self.trials_spin.value())
@@ -417,8 +479,8 @@ class BioRankOptimizerWindow(QWidget):
             self.best_label.setText(
                 "Best display score so far:\n"
                 f"Score = {self._fmt(best_row.get('selection_score'))}\n"
-                f"alpha = {self._fmt(best_row.get('alpha'))}\n"
-                f"beta = {self._fmt(best_row.get('beta'))}"
+                f"alpha = {self._fmt_parameter(best_row.get('alpha'))}\n"
+                f"beta = {self._fmt_parameter(best_row.get('beta'))}"
             )
         baseline_algorithm = payload.get("baseline_algorithm")
         baseline_state = payload.get("baseline_state")
@@ -460,8 +522,21 @@ class BioRankOptimizerWindow(QWidget):
             self.worker.cancel()
             self.status_label.setText("Cancelling...")
 
+    def toggle_pause(self):
+        if not self.worker:
+            return
+        if self.worker.is_paused():
+            self.worker.resume()
+            self.pause_button.setText("Pause")
+            self.status_label.setText("Resume requested...")
+        else:
+            self.worker.pause()
+            self.pause_button.setText("Resume")
+            self.status_label.setText("Pause requested; waiting for a safe checkpoint...")
+
     def _set_running_state(self, running):
         self.start_button.setEnabled(not running)
+        self.pause_button.setEnabled(running)
         self.cancel_button.setEnabled(running)
         self.run_again_button.setEnabled(not running and self.result is not None)
 
@@ -481,10 +556,11 @@ class BioRankOptimizerWindow(QWidget):
         top_row_index = self._top_row_index(rows, "selection_score")
         for row_index, row in enumerate(rows):
             alpha = "N/A" if row.get("alpha_used") == "No" else self._fmt(row.get("alpha"))
+            beta = "N/A" if row.get("beta_used") == "No" else self._fmt(row.get("beta"))
             values = [
                 row.get("method_label", ""),
                 alpha,
-                self._fmt(row.get("beta")),
+                beta,
                 self._fmt(row.get("ndcg_at_15")),
                 self._fmt(row.get("recall_at_15")),
                 self._fmt(row.get("ndcg_at_100")),
@@ -520,8 +596,8 @@ class BioRankOptimizerWindow(QWidget):
         for row_index, row in enumerate(rows):
             values = [
                 row.get("trial_number", ""),
-                self._fmt(row.get("alpha")),
-                self._fmt(row.get("beta")),
+                self._fmt_parameter(row.get("alpha")),
+                self._fmt_parameter(row.get("beta")),
                 self._fmt(row.get("ndcg_at_15")),
                 self._fmt(row.get("recall_at_15")),
                 self._fmt(row.get("ndcg_at_100")),
@@ -539,8 +615,9 @@ class BioRankOptimizerWindow(QWidget):
         lines = []
         for row in rows[:4]:
             alpha = "N/A" if row.get("alpha_used") == "No" else self._fmt(row.get("alpha"))
+            beta = "N/A" if row.get("beta_used") == "No" else self._fmt(row.get("beta"))
             lines.append(
-                f"{row.get('method_label')}: alpha={alpha}, beta={self._fmt(row.get('beta'))}, "
+                f"{row.get('method_label')}: alpha={alpha}, beta={beta}, "
                 f"nDCG15={self._fmt(row.get('ndcg_at_15'))}, Recall15={self._fmt(row.get('recall_at_15'))}, "
                 f"nDCG100={self._fmt(row.get('ndcg_at_100'))}, Recall100={self._fmt(row.get('recall_at_100'))}"
             )
@@ -555,6 +632,9 @@ class BioRankOptimizerWindow(QWidget):
             return f"{float(value):.4f}"
         except (TypeError, ValueError):
             return str(value or "")
+
+    def _fmt_parameter(self, value):
+        return "N/A" if value in (None, "") else self._fmt(value)
 
     def _best_values(self, rows, keys):
         best = {}
@@ -614,7 +694,7 @@ class AdvancedSettingsDialog(QDialog):
         grid = QGridLayout(tab)
         self.path_edits = {}
         rows = [(label, key) for label, key, _optional in BIORANK_INPUTS]
-        rows.extend([("OncoKB/reference file", "oncokb"), ("Gene mapping file", "gene_mapping")])
+        rows.extend([("Validation reference file", "oncokb"), ("Gene mapping file", "gene_mapping")])
         for row_index, (label, key) in enumerate(rows):
             grid.addWidget(QLabel(label), row_index, 0)
             edit = QLineEdit(self._path_value(key))

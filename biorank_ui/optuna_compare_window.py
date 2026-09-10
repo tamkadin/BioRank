@@ -25,14 +25,27 @@ from biorank_ui.config import (
     DEFAULT_OPTUNA_TRIALS,
     DEFAULT_PRECISION_K,
     DEFAULT_RECALL_K,
+    DATASET_PROFILE_DEFAULT,
     DISEASES,
+    EVALUATION_MODE_DISPLAY_LABELS,
+    EVALUATION_MODE_ONCOKB,
     GENE_MAPPING_PATH,
-    ONCOKB_PATH,
     build_default_biorank_inputs,
     build_output_paths,
+    get_evaluation_mode_label,
+    get_evaluation_mode_value,
+    get_validation_reference_path,
     get_optuna_biorank_compare_output_base,
 )
 from biorank_ui.ranking_review import show_ranking_result_review
+from BioRank.optimization.ablation_config import (
+    ABLATION_MODE_FULL,
+    ABLATION_MODE_LABELS,
+    ABLATION_MODE_ORDER,
+    ablation_pipeline_config,
+    ablation_slug,
+    required_input_keys,
+)
 
 
 COMPARISON_COLUMNS = [
@@ -109,6 +122,7 @@ class AlphaBetaCompareOptimizationWindow:
         self.window.protocol("WM_DELETE_WINDOW", self._close)
 
         self.cancel_event = None
+        self.pause_event = None
         self.current_result = None
         self.output_dir = None
         self.started_at = None
@@ -120,7 +134,14 @@ class AlphaBetaCompareOptimizationWindow:
         self.table_columns = {}
 
         self.disease_var = tk.StringVar(value=selected_disease)
-        self.validation_path_var = tk.StringVar(value=ONCOKB_PATH)
+        self.evaluation_mode_var = tk.StringVar(value=get_evaluation_mode_label(EVALUATION_MODE_ONCOKB))
+        self.validation_path_var = tk.StringVar(
+            value=get_validation_reference_path(
+                selected_disease,
+                DATASET_PROFILE_DEFAULT,
+                EVALUATION_MODE_ONCOKB,
+            )
+        )
         self.validation_column_var = tk.StringVar(value="Gene")
         self.mapping_path_var = tk.StringVar(value=GENE_MAPPING_PATH)
         self.alpha_min_var = tk.StringVar(value=str(DEFAULT_ALPHA_MIN))
@@ -129,6 +150,7 @@ class AlphaBetaCompareOptimizationWindow:
         self.beta_max_var = tk.StringVar(value=str(DEFAULT_BETA_MAX))
         self.n_trials_var = tk.StringVar(value=str(DEFAULT_OPTUNA_TRIALS))
         self.random_seed_var = tk.StringVar(value=str(DEFAULT_OPTUNA_RANDOM_SEED))
+        self.ablation_mode_var = tk.StringVar(value=ABLATION_MODE_FULL)
         self.recall_k_var = tk.StringVar(value=str(DEFAULT_RECALL_K))
         self.ndcg_k_var = tk.StringVar(value=str(DEFAULT_NDCG_K))
         self.precision_k_var = tk.StringVar(value=str(DEFAULT_PRECISION_K))
@@ -142,7 +164,7 @@ class AlphaBetaCompareOptimizationWindow:
         self.progress_text_var = tk.StringVar(value="0 / 0")
         self.input_status_var = tk.StringVar(value="Inputs: not checked")
         self.input_detail_var = tk.StringVar(value="")
-        self.oncokb_status_var = tk.StringVar(value="OncoKB: not checked")
+        self.oncokb_status_var = tk.StringVar(value="Validation: not checked")
         self.mapping_status_var = tk.StringVar(value="Gene mapping: not checked")
         self.range_summary_var = tk.StringVar()
         self.metric_summary_var = tk.StringVar()
@@ -216,7 +238,7 @@ class AlphaBetaCompareOptimizationWindow:
         badges.grid(row=2, column=0, sticky="w")
         for text in (
             "Mode: BioRank-only optimization",
-            "Validation: OncoKB",
+            "Validation set: selectable",
             "Baselines: alpha=0.5, beta=0.5",
         ):
             ttk.Label(badges, text=text, style="Badge.TLabel").pack(side="left", padx=(0, 8))
@@ -235,21 +257,32 @@ class AlphaBetaCompareOptimizationWindow:
         disease_box.bind("<<ComboboxSelected>>", lambda _event: self._auto_fill_inputs())
         ttk.Button(disease_card, text="Auto-fill Inputs", command=self._auto_fill_inputs).grid(row=0, column=2, sticky="e", padx=(10, 0))
 
+        ttk.Label(disease_card, text="Validation set").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=(8, 0))
+        validation_box = ttk.Combobox(
+            disease_card,
+            textvariable=self.evaluation_mode_var,
+            values=EVALUATION_MODE_DISPLAY_LABELS,
+            state="readonly",
+            width=24,
+        )
+        validation_box.grid(row=1, column=1, columnspan=2, sticky="w", pady=(8, 0))
+        validation_box.bind("<<ComboboxSelected>>", lambda _event: self._on_validation_mode_changed())
+
         self.input_status_label = ttk.Label(disease_card, textvariable=self.input_status_var, style="Muted.TLabel")
-        self.input_status_label.grid(row=1, column=0, columnspan=3, sticky="w", pady=(10, 0))
+        self.input_status_label.grid(row=2, column=0, columnspan=3, sticky="w", pady=(10, 0))
         ttk.Label(disease_card, textvariable=self.input_detail_var, style="Muted.TLabel", justify="left").grid(
-            row=2,
+            row=3,
             column=0,
             columnspan=3,
             sticky="w",
             pady=(4, 0),
         )
         self.oncokb_status_label = ttk.Label(disease_card, textvariable=self.oncokb_status_var, style="Muted.TLabel")
-        self.oncokb_status_label.grid(row=3, column=0, columnspan=3, sticky="w", pady=(3, 0))
+        self.oncokb_status_label.grid(row=4, column=0, columnspan=3, sticky="w", pady=(3, 0))
         self.mapping_status_label = ttk.Label(disease_card, textvariable=self.mapping_status_var, style="Muted.TLabel")
-        self.mapping_status_label.grid(row=4, column=0, columnspan=3, sticky="w", pady=(3, 0))
+        self.mapping_status_label.grid(row=5, column=0, columnspan=3, sticky="w", pady=(3, 0))
         ttk.Button(disease_card, text="View/Edit Input Files", command=self._open_advanced_settings).grid(
-            row=5,
+            row=6,
             column=0,
             columnspan=3,
             sticky="ew",
@@ -263,15 +296,24 @@ class AlphaBetaCompareOptimizationWindow:
         ttk.Entry(optimization_card, textvariable=self.n_trials_var, width=10).grid(row=0, column=1, sticky="w", pady=3)
         ttk.Label(optimization_card, text="Random seed").grid(row=1, column=0, sticky="w", padx=(0, 8), pady=3)
         ttk.Entry(optimization_card, textvariable=self.random_seed_var, width=10).grid(row=1, column=1, sticky="w", pady=3)
+        ttk.Label(optimization_card, text="Ablation case").grid(row=2, column=0, sticky="w", padx=(0, 8), pady=3)
+        ablation_box = ttk.Combobox(
+            optimization_card,
+            textvariable=self.ablation_mode_var,
+            values=ABLATION_MODE_ORDER,
+            state="readonly",
+            width=24,
+        )
+        ablation_box.grid(row=2, column=1, sticky="w", pady=3)
         ttk.Label(optimization_card, textvariable=self.range_summary_var, style="Muted.TLabel").grid(
-            row=2,
+            row=3,
             column=0,
             columnspan=2,
             sticky="w",
             pady=(8, 0),
         )
         ttk.Button(optimization_card, text="Advanced Settings", command=self._open_advanced_settings).grid(
-            row=3,
+            row=4,
             column=0,
             columnspan=2,
             sticky="ew",
@@ -336,8 +378,10 @@ class AlphaBetaCompareOptimizationWindow:
         self.start_button.grid(row=0, column=0, columnspan=3, sticky="ew", pady=(0, 8))
         self.cancel_button = ttk.Button(action_card, text="Cancel", state="disabled", command=self._cancel)
         self.cancel_button.grid(row=1, column=0, sticky="ew", padx=(0, 4), pady=4)
+        self.pause_button = ttk.Button(action_card, text="Pause", state="disabled", command=self._toggle_pause)
+        self.pause_button.grid(row=1, column=1, sticky="ew", padx=4, pady=4)
         self.open_output_button = ttk.Button(action_card, text="Open Output Folder", state="disabled", command=self._open_output_folder)
-        self.open_output_button.grid(row=1, column=1, sticky="ew", padx=4, pady=4)
+        self.open_output_button.grid(row=2, column=0, sticky="ew", padx=(0, 4), pady=4)
         self.open_summary_button = ttk.Button(
             action_card,
             text="Open Comparison Summary",
@@ -346,10 +390,10 @@ class AlphaBetaCompareOptimizationWindow:
         )
         self.open_summary_button.grid(row=1, column=2, sticky="ew", padx=(4, 0), pady=4)
         self.view_selected_button = ttk.Button(action_card, text="Run/View Selected Row", state="disabled", command=self._run_selected_row)
-        self.view_selected_button.grid(row=2, column=0, sticky="ew", padx=(0, 4), pady=4)
+        self.view_selected_button.grid(row=2, column=1, sticky="ew", padx=4, pady=4)
         self.open_logs_button = ttk.Button(action_card, text="Open Logs", state="disabled", command=lambda: self._open_file("logs_path"))
-        self.open_logs_button.grid(row=2, column=1, sticky="ew", padx=4, pady=4)
-        ttk.Button(action_card, text="Close", command=self._close).grid(row=2, column=2, sticky="ew", padx=(4, 0), pady=4)
+        self.open_logs_button.grid(row=2, column=2, sticky="ew", padx=(4, 0), pady=4)
+        ttk.Button(action_card, text="Close", command=self._close).grid(row=3, column=2, sticky="ew", padx=(4, 0), pady=4)
         return action_card
 
     def _create_results_tabs(self, parent):
@@ -487,11 +531,11 @@ class AlphaBetaCompareOptimizationWindow:
             ttk.Button(frame, text="Browse", command=lambda var=self.input_vars[key]: self._browse_var(var)).grid(row=row, column=2, sticky="e", padx=(8, 0), pady=4)
             row += 1
 
-        ttk.Label(frame, text="OncoKB/reference file").grid(row=row, column=0, sticky="w", pady=4, padx=(0, 8))
+        ttk.Label(frame, text="Validation reference file").grid(row=row, column=0, sticky="w", pady=4, padx=(0, 8))
         ttk.Entry(frame, textvariable=self.validation_path_var).grid(row=row, column=1, sticky="ew", pady=4)
         ttk.Button(frame, text="Browse", command=lambda: self._browse_var(self.validation_path_var)).grid(row=row, column=2, sticky="e", padx=(8, 0), pady=4)
         row += 1
-        ttk.Label(frame, text="OncoKB gene column").grid(row=row, column=0, sticky="w", pady=4, padx=(0, 8))
+        ttk.Label(frame, text="Validation gene column").grid(row=row, column=0, sticky="w", pady=4, padx=(0, 8))
         ttk.Entry(frame, textvariable=self.validation_column_var, width=18).grid(row=row, column=1, sticky="w", pady=4)
         row += 1
         ttk.Label(frame, text="Gene symbol mapping file").grid(row=row, column=0, sticky="w", pady=4, padx=(0, 8))
@@ -567,10 +611,25 @@ class AlphaBetaCompareOptimizationWindow:
         defaults = build_default_biorank_inputs(self.disease_var.get())
         for key, variable in self.input_vars.items():
             variable.set(defaults.get(key, ""))
-        self.validation_path_var.set(ONCOKB_PATH)
+        self.validation_path_var.set(self._default_validation_path())
         self.mapping_path_var.set(GENE_MAPPING_PATH)
         self._refresh_summaries()
         self._update_input_status()
+
+    def _on_validation_mode_changed(self):
+        self.validation_path_var.set(self._default_validation_path())
+        self._refresh_summaries()
+        self._update_input_status()
+
+    def _evaluation_mode(self):
+        return get_evaluation_mode_value(self.evaluation_mode_var.get())
+
+    def _default_validation_path(self):
+        return get_validation_reference_path(
+            self.disease_var.get(),
+            DATASET_PROFILE_DEFAULT,
+            self._evaluation_mode(),
+        )
 
     def _use_recommended_settings(self):
         self.alpha_min_var.set(str(DEFAULT_ALPHA_MIN))
@@ -579,10 +638,12 @@ class AlphaBetaCompareOptimizationWindow:
         self.beta_max_var.set(str(DEFAULT_BETA_MAX))
         self.n_trials_var.set(str(DEFAULT_OPTUNA_TRIALS))
         self.random_seed_var.set(str(DEFAULT_OPTUNA_RANDOM_SEED))
+        self.ablation_mode_var.set(ABLATION_MODE_FULL)
         self.recall_k_var.set(str(DEFAULT_RECALL_K))
         self.ndcg_k_var.set(str(DEFAULT_NDCG_K))
         self.precision_k_var.set(str(DEFAULT_PRECISION_K))
-        self.validation_path_var.set(ONCOKB_PATH)
+        self.evaluation_mode_var.set(get_evaluation_mode_label(EVALUATION_MODE_ONCOKB))
+        self.validation_path_var.set(self._default_validation_path())
         self.validation_column_var.set("Gene")
         self.mapping_path_var.set(GENE_MAPPING_PATH)
         self.prefer_balanced_var.set(False)
@@ -626,8 +687,9 @@ class AlphaBetaCompareOptimizationWindow:
             detail_lines.append(f"{detail_labels.get(key, key)}: {status}")
         self.input_detail_var.set(" | ".join(detail_lines[:3]) + "\n" + " | ".join(detail_lines[3:]))
 
+        validation_label = self.evaluation_mode_var.get() or "Validation"
         oncokb_ok = os.path.exists(self.validation_path_var.get().strip())
-        self.oncokb_status_var.set("OncoKB: detected" if oncokb_ok else "OncoKB: missing")
+        self.oncokb_status_var.set(f"{validation_label}: detected" if oncokb_ok else f"{validation_label}: missing")
         self.oncokb_status_label.configure(style="Success.TLabel" if oncokb_ok else "Danger.TLabel")
 
         mapping_path = self.mapping_path_var.get().strip()
@@ -643,6 +705,7 @@ class AlphaBetaCompareOptimizationWindow:
             return
 
         self.cancel_event = threading.Event()
+        self.pause_event = threading.Event()
         self.current_result = None
         self.best_trial_row = None
         self.started_at = time.perf_counter()
@@ -660,6 +723,7 @@ class AlphaBetaCompareOptimizationWindow:
 
             optimizer = BioRankAlphaBetaOptimizer(
                 cancellation_event=self.cancel_event,
+                pause_event=self.pause_event,
                 progress_callback=self._thread_progress,
                 **config,
             )
@@ -673,7 +737,12 @@ class AlphaBetaCompareOptimizationWindow:
     def _collect_config(self):
         disease = self.disease_var.get()
         input_paths = {key: variable.get().strip() for key, variable in self.input_vars.items()}
+        ablation_mode = self.ablation_mode_var.get()
+        pipeline_config = ablation_pipeline_config(ablation_mode)
+        required_keys = required_input_keys(ablation_mode)
         for label, key, _is_folder in BIORANK_INPUTS:
+            if key not in required_keys:
+                continue
             value = input_paths.get(key, "")
             if not value:
                 raise ValueError(f"Missing {label}.")
@@ -682,9 +751,9 @@ class AlphaBetaCompareOptimizationWindow:
 
         validation_path = self.validation_path_var.get().strip()
         if not validation_path:
-            raise ValueError("Missing OncoKB file.")
+            raise ValueError("Missing validation reference file.")
         if not os.path.exists(validation_path):
-            raise ValueError("Missing OncoKB file.")
+            raise ValueError("Missing validation reference file.")
 
         mapping_path = self.mapping_path_var.get().strip()
         if mapping_path and not os.path.exists(mapping_path):
@@ -705,15 +774,15 @@ class AlphaBetaCompareOptimizationWindow:
 
         if n_trials < 1:
             raise ValueError("Invalid n_trials.")
-        if not 0.0 <= alpha_min < alpha_max <= 1.0:
+        if pipeline_config["alpha_used"] and not 0.0 <= alpha_min < alpha_max <= 1.0:
             raise ValueError("Alpha range must use inclusive bounds in [0, 1] and min must be less than max.")
-        if not 0.0 <= beta_min < beta_max <= 1.0:
+        if pipeline_config["beta_used"] and not 0.0 <= beta_min < beta_max <= 1.0:
             raise ValueError("Beta range must use inclusive bounds in [0, 1] and min must be less than max.")
         if min(recall_k, ndcg_k, precision_k) < 1:
             raise ValueError("Metric K values must be at least 1.")
 
         timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-        output_dir = get_optuna_biorank_compare_output_base(disease) / timestamp
+        output_dir = get_optuna_biorank_compare_output_base(disease) / ablation_slug(ablation_mode) / timestamp
         self.output_dir = output_dir
         return {
             "cancer_type": disease,
@@ -728,6 +797,7 @@ class AlphaBetaCompareOptimizationWindow:
             "output_dir": str(output_dir),
             "prefer_balanced_top5": False,
             "random_seed": random_seed,
+            "ablation_mode": ablation_mode,
         }
 
     def _thread_progress(self, payload):
@@ -762,10 +832,7 @@ class AlphaBetaCompareOptimizationWindow:
 
         alpha = payload.get("alpha")
         beta = payload.get("beta")
-        if alpha is not None and beta is not None:
-            self.status_var.set(f"{status} | alpha={alpha:.4f} beta={beta:.4f}")
-        else:
-            self.status_var.set(status)
+        self.status_var.set(f"{status} | {self._parameter_text(alpha, beta)}")
 
         metrics = payload.get("metrics") or {}
         if metrics:
@@ -784,10 +851,9 @@ class AlphaBetaCompareOptimizationWindow:
         if best_row:
             self.best_trial_row = best_row
             self.best_so_far_var.set(
-                "Best top-5 display score so far: {:.4f} | alpha={:.4f} | beta={:.4f}".format(
+                "Best top-5 display score so far: {:.4f} | {}".format(
                     float(best_row.get("selection_score", 0.0)),
-                    float(best_row.get("alpha", 0.0)),
-                    float(best_row.get("beta", 0.0)),
+                    self._parameter_text(best_row.get("alpha"), best_row.get("beta")),
                 )
             )
 
@@ -816,11 +882,27 @@ class AlphaBetaCompareOptimizationWindow:
     def _cancel(self):
         if self.cancel_event is not None:
             self.cancel_event.set()
+            if self.pause_event is not None:
+                self.pause_event.clear()
             self.cancel_button.config(state="disabled")
+            self.pause_button.config(state="disabled")
             self.status_var.set("Cancelling optimization...")
+
+    def _toggle_pause(self):
+        if self.pause_event is None:
+            return
+        if self.pause_event.is_set():
+            self.pause_event.clear()
+            self.pause_button.config(text="Pause")
+            self.status_var.set("Resume requested...")
+        else:
+            self.pause_event.set()
+            self.pause_button.config(text="Resume")
+            self.status_var.set("Pause requested; waiting for a safe checkpoint...")
 
     def _set_running_state(self, running):
         self.start_button.config(state="disabled" if running else "normal")
+        self.pause_button.config(state="normal" if running else "disabled", text="Pause")
         self.cancel_button.config(state="normal" if running else "disabled")
         output_state = "normal" if self.current_result else "disabled"
         self.open_output_button.config(state=output_state)
@@ -897,7 +979,7 @@ class AlphaBetaCompareOptimizationWindow:
             return (1, str(value))
 
     def _format_cell(self, row, source):
-        if source == "alpha" and row.get("alpha_used") == "No":
+        if source in {"alpha", "beta"} and row.get(f"{source}_used") == "No":
             return "N/A"
         value = row.get(source, "")
         try:
@@ -915,6 +997,11 @@ class AlphaBetaCompareOptimizationWindow:
         except (TypeError, ValueError):
             return value
         return value
+
+    def _parameter_text(self, alpha, beta):
+        alpha_text = "N/A" if alpha in (None, "") else f"{float(alpha):.4f}"
+        beta_text = "N/A" if beta in (None, "") else f"{float(beta):.4f}"
+        return f"alpha={alpha_text} beta={beta_text}"
 
     def _load_logs(self, file_path):
         self.logs_text.config(state="normal")
@@ -974,6 +1061,9 @@ class AlphaBetaCompareOptimizationWindow:
             method_label or ALGORITHM_LABELS.get(algorithm, algorithm),
             self.disease_var.get(),
             {"ranking": ranking_path},
+            validation_reference_path=self.validation_path_var.get().strip(),
+            validation_label=self.evaluation_mode_var.get(),
+            validation_gene_column=self.validation_column_var.get().strip() or "Gene",
         )
 
     def _open_selected_ranking_file(self):
@@ -1003,11 +1093,14 @@ class AlphaBetaCompareOptimizationWindow:
             alpha = row.get("alpha")
             if row.get("alpha_used") == "No":
                 alpha = "N/A"
+            beta = row.get("beta")
+            if row.get("beta_used") == "No":
+                beta = "N/A"
             lines.append(
                 "\n{} | alpha={} beta={}\nnDCG@15={} | Recall@15={} | nDCG@100={} | Recall@100={} | Common@100={}".format(
                     row.get("method_label", ""),
                     alpha,
-                    row.get("beta", ""),
+                    beta,
                     row.get("ndcg_at_15", ""),
                     row.get("recall_at_15", ""),
                     row.get("ndcg_at_100", ""),
@@ -1057,13 +1150,14 @@ class AlphaBetaCompareOptimizationWindow:
             table.column(column, width=130 if column != "Method" else 190, anchor="w")
         for row in rows:
             alpha = "N/A" if row.get("alpha_used") == "No" else self._format_cell(row, "alpha")
+            beta = "N/A" if row.get("beta_used") == "No" else self._format_cell(row, "beta")
             table.insert(
                 "",
                 "end",
                 values=(
                     row.get("method_label", ""),
                     alpha,
-                    self._format_cell(row, "beta"),
+                    beta,
                     self._format_cell(row, "ndcg_at_15"),
                     self._format_cell(row, "recall_at_15"),
                     self._format_cell(row, "ndcg_at_100"),

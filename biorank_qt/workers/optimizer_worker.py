@@ -18,6 +18,7 @@ class OptimizerWorker(QObject):
         super().__init__()
         self.config = config
         self.cancellation_event = threading.Event()
+        self.pause_event = threading.Event()
 
     @Slot()
     def run(self):
@@ -37,7 +38,9 @@ class OptimizerWorker(QObject):
                 random_seed=self.config["random_seed"],
                 candidate_selection_mode=self.config["candidate_selection_mode"],
                 max_selected_candidates=self.config["max_selected_candidates"],
+                ablation_mode=self.config.get("ablation_mode", "full"),
                 cancellation_event=self.cancellation_event,
+                pause_event=self.pause_event,
                 progress_callback=self.progress.emit,
             )
             self.completed.emit(optimizer.run())
@@ -48,3 +51,13 @@ class OptimizerWorker(QObject):
 
     def cancel(self):
         self.cancellation_event.set()
+        self.pause_event.clear()
+
+    def pause(self):
+        self.pause_event.set()
+
+    def resume(self):
+        self.pause_event.clear()
+
+    def is_paused(self):
+        return self.pause_event.is_set()
